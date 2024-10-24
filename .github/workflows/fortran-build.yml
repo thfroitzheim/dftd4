@@ -34,7 +34,7 @@ jobs:
           build: meson
           build-type: coverage
           compiler: gnu
-          version: 9
+          version: 11
 
         - os: macos-13
           build: meson
