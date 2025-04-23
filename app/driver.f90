@@ -22,7 +22,7 @@ module dftd4_driver
    use dftd4, only : get_dispersion, dispersion_model, &
       & d4_model, new_d4_model, d4s_model, new_d4s_model, realspace_cutoff, &
       & damping_param, rational_damping_param, get_rational_damping, &
-      & get_properties, get_pairwise_dispersion, get_dispersion_hessian
+      & get_properties, get_pairwise_dispersion, get_dispersion_hessian, d4_ref
    use dftd4_output
    use dftd4_utils
    use dftd4_cli, only : cli_config, param_config, run_config
@@ -77,7 +77,7 @@ subroutine run_main(config, error)
    real(wp), allocatable :: cn(:), q(:), c6(:, :), alpha(:)
    real(wp), allocatable :: s9
    real(wp) :: ga, gc
-   integer :: stat, unit, is, id
+   integer :: stat, unit, is, id, charge_model
    logical :: exist
 
    if (config%verbosity > 1) then
@@ -163,18 +163,34 @@ subroutine run_main(config, error)
       end if
    end if
 
+   if(allocated(config%charge_model)) then
+      if(lowercase(config%charge_model) == "eeq") then
+         charge_model = d4_ref%eeq
+      else if(lowercase(config%charge_model) == "eeqbc") then
+         charge_model = d4_ref%eeqbc
+      else
+         ! Unknown charge model or GFN2 are not supported 
+         ! for non-self-consistent D4
+         call fatal_error(error, "Unknown charge model selected")
+         return
+      end if
+   else
+      ! Use EEQ as default charge model
+      charge_model = d4_ref%eeq
+   end if
+
    if(lowercase(config%model) == "d4") then
       block 
          type(d4_model), allocatable :: tmp
          allocate(tmp)
-         call new_d4_model(error, tmp, mol, ga=ga, gc=gc, wf=config%wf)
+         call new_d4_model(error, tmp, mol, ga=ga, gc=gc, wf=config%wf, ref=charge_model)
          call move_alloc(tmp, d4)
       end block 
    else if(lowercase(config%model) == "d4s") then
       block 
          type(d4s_model), allocatable :: tmp
          allocate(tmp)
-         call new_d4s_model(error, tmp, mol, ga=ga, gc=gc)
+         call new_d4s_model(error, tmp, mol, ga=ga, gc=gc, ref=charge_model)
          call move_alloc(tmp, d4)
       end block
    else
