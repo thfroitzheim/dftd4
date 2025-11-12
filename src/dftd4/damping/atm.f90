@@ -585,9 +585,9 @@ subroutine get_fdmp_erf_bj(rij, rik, rjk, r2ij, r2ik, r2jk, rrij, rrik, rrjk, a1
 
    real(wp) :: r0ij, r0ik, r0jk, numer, denom
 
-   r0ij = a1 * sqrt(rrij) * 0.5_wp * (1.0_wp + erf(- a3 * (rij - sqrt(rrij))))
-   r0ik = a1 * sqrt(rrik) * 0.5_wp * (1.0_wp + erf(- a3 * (rik - sqrt(rrik))))
-   r0jk = a1 * sqrt(rrjk) * 0.5_wp * (1.0_wp + erf(- a3 * (rjk - sqrt(rrjk))))
+   r0ij = (a1 * sqrt(rrij) + a2) * 0.5_wp * (1.0_wp + erf(- a3 * (rij - sqrt(rrij))))
+   r0ik = (a1 * sqrt(rrik) + a2) * 0.5_wp * (1.0_wp + erf(- a3 * (rik - sqrt(rrik))))
+   r0jk = (a1 * sqrt(rrjk) + a2) * 0.5_wp * (1.0_wp + erf(- a3 * (rjk - sqrt(rrjk))))
 
    numer = (rij * r2ij) * (rik * r2ik) * (rjk * r2jk)
    denom = (rij + r0ij)**3.0_wp * (rik + r0ik)**3.0_wp * (rjk + r0jk)**3.0_wp
@@ -629,9 +629,9 @@ subroutine get_fdmp_tanh_bj(rij, rik, rjk, r2ij, r2ik, r2jk, rrij, rrik, rrjk, a
 
    real(wp) :: r0ij, r0ik, r0jk, numer, denom
 
-   r0ij = a1 * sqrt(rrij) * 0.5_wp * (1.0_wp + tanh(- a3 * (rij - sqrt(rrij))))
-   r0ik = a1 * sqrt(rrik) * 0.5_wp * (1.0_wp + tanh(- a3 * (rik - sqrt(rrik))))
-   r0jk = a1 * sqrt(rrjk) * 0.5_wp * (1.0_wp + tanh(- a3 * (rjk - sqrt(rrjk))))
+   r0ij = (a1 * sqrt(rrij) + a2) * 0.5_wp * (1.0_wp + tanh(- a3 * (rij - sqrt(rrij))))
+   r0ik = (a1 * sqrt(rrik) + a2) * 0.5_wp * (1.0_wp + tanh(- a3 * (rik - sqrt(rrik))))
+   r0jk = (a1 * sqrt(rrjk) + a2) * 0.5_wp * (1.0_wp + tanh(- a3 * (rjk - sqrt(rrjk))))
 
    numer = (rij * r2ij) * (rik * r2ik) * (rjk * r2jk)
    denom = (rij + r0ij)**3.0_wp * (rik + r0ik)**3.0_wp * (rjk + r0jk)**3.0_wp

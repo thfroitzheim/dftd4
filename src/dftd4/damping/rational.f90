@@ -291,7 +291,7 @@ subroutine get_t6_t8_erf_bj(r, r2, rrij, a1, a2, a3, t6, t8)
 
    real(wp) :: r0ij
 
-   r0ij = a1 * sqrt(rrij) * 0.5_wp * (1.0_wp + erf(- a3 * (r - sqrt(rrij))))
+   r0ij = (a1 * sqrt(rrij) + a2) * 0.5_wp * (1.0_wp + erf(- a3 * (r - sqrt(rrij))))
    
    t6 = 1.0_wp/(r + r0ij)**6
    t8 = 1.0_wp/(r + r0ij)**8
@@ -318,7 +318,7 @@ subroutine get_t6_t8_tanh_bj(r, r2, rrij, a1, a2, a3, t6, t8)
 
    real(wp) :: r0ij
 
-   r0ij = a1 * sqrt(rrij) * 0.5_wp * (1.0_wp + tanh(- a3 * (r - sqrt(rrij))))
+   r0ij = (a1 * sqrt(rrij) + a2) * 0.5_wp * (1.0_wp + tanh(- a3 * (r - sqrt(rrij))))
 
    t6 = 1.0_wp/(r + r0ij)**6
    t8 = 1.0_wp/(r + r0ij)**8
