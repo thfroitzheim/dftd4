@@ -59,6 +59,7 @@ module dftd4_cli
       real(wp) :: wf = 6.0_wp
       character(len=:), allocatable :: charge_model
       logical :: pair_resolved = .false.
+      integer :: damping_type = 0
    end type run_config
    type, extends(cli_config) :: param_config
       logical :: list = .false.
@@ -262,6 +263,10 @@ subroutine get_run_arguments(config, list, start, error)
             exit
          end if
          call move_alloc(arg, config%charge_model)
+      case("--damp_type")
+         iarg = iarg + 1
+         call get_argument_as_integer(iarg, config%damping_type, error)
+         if (allocated(error)) exit
       case("-f", "--func")
          config%rational = .true.
          iarg = iarg + 1
@@ -285,6 +290,9 @@ subroutine get_run_arguments(config, list, start, error)
          if (allocated(error)) exit
          iarg = iarg + 1
          call get_argument_as_real(iarg, config%inp%a2, error)
+         if (allocated(error)) exit
+         iarg = iarg + 1
+         call get_argument_as_real(iarg, config%inp%a3, error)
          if (allocated(error)) exit
       end select
    end do
@@ -382,6 +390,34 @@ subroutine get_argument_as_real(iarg, val, error)
    end if
 
 end subroutine get_argument_as_real
+
+
+subroutine get_argument_as_integer(iarg, val, error)
+
+   !> Index of command line argument, range [0:command_argument_count()]
+   integer, intent(in) :: iarg
+
+   !> Integer value
+   integer, intent(out) :: val
+
+   !> Error handling
+   type(error_type), allocatable :: error
+
+   integer :: stat
+   character(len=:), allocatable :: arg
+
+   call get_argument(iarg, arg)
+   if (.not.allocated(arg)) then
+      call fatal_error(error, "Cannot read integer value, argument missing")
+      return
+   end if
+   read(arg, *, iostat=stat) val
+   if (stat /= 0) then
+      call fatal_error(error, "Cannot read integer value from '"//arg//"'")
+      return
+   end if
+
+end subroutine get_argument_as_integer
 
 
 end module dftd4_cli

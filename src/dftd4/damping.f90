@@ -35,7 +35,7 @@ module dftd4_damping
    abstract interface
       !> Evaluation of the dispersion energy expression
       subroutine dispersion_interface(self, mol, trans, cutoff, r4r2, &
-            & c6, dc6dcn, dc6dq, energy, dEdcn, dEdq, gradient, sigma)
+            & c6, dc6dcn, dc6dq, energy, dEdcn, dEdq, gradient, sigma, damping_type)
          import :: structure_type, damping_param, wp
 
          !> Damping parameters
@@ -76,6 +76,9 @@ module dftd4_damping
 
          !> Dispersion virial
          real(wp), intent(inout), optional :: sigma(:, :)
+
+         !> Type of damping function
+         integer, intent(in), optional :: damping_type
       end subroutine dispersion_interface
 
       !> Evaluation of the pairwise representation of the dispersion energy

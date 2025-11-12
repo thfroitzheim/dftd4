@@ -63,7 +63,7 @@ contains
 
 
 !> Create new D4S dispersion model from molecular structure input
-subroutine new_d4s_model(error, d4, mol, ga, gc, qmod)
+subroutine new_d4s_model(error, d4, mol, ga, gc, qmod, damping_type)
    !DEC$ ATTRIBUTES DLLEXPORT :: new_d4_model
 
    !> Instance of the dispersion model
@@ -83,6 +83,9 @@ subroutine new_d4s_model(error, d4, mol, ga, gc, qmod)
 
    !> Charge model selection
    integer, intent(in), optional :: qmod
+
+   !> Type of damping function
+   integer, intent(in), optional :: damping_type
 
    integer :: isp, izp, iref, jsp, jzp, jref
    integer :: mref, tmp_qmod
@@ -222,6 +225,12 @@ subroutine new_d4s_model(error, d4, mol, ga, gc, qmod)
          end do
       end do
    end do
+
+   if (present(damping_type)) then
+      d4%damping_type = damping_type
+   else
+      d4%damping_type = 0
+   end if
 
 end subroutine new_d4s_model
 

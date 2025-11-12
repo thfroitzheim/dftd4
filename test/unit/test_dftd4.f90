@@ -215,7 +215,7 @@ subroutine test_pbed4_mb01(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp)
+      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "01")
    call new_d4_model(error, d4, mol)
@@ -232,7 +232,7 @@ subroutine test_pbed4_eeqbc_mb01(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp)
+      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "01")
    call new_d4_model(error, d4, mol, qmod=d4_qmod%eeqbc)
@@ -249,7 +249,7 @@ subroutine test_pbed4s_mb01(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp)
+      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "01")
    call new_d4s_model(error, d4s, mol)
@@ -266,7 +266,7 @@ subroutine test_pbed4s_eeqbc_mb01(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp)
+      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "01")
    call new_d4s_model(error, d4s, mol, qmod=d4_qmod%eeqbc)
@@ -283,7 +283,7 @@ subroutine test_b97d4_mb02(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.69460052_wp, a1 = 0.28904684_wp, a2 = 4.13407323_wp)
+      & s8 = 1.69460052_wp, a1 = 0.28904684_wp, a2 = 4.13407323_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "02")
    call new_d4_model(error, d4, mol)
@@ -300,7 +300,7 @@ subroutine test_b97d4s_mb02(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.69460052_wp, a1 = 0.28904684_wp, a2 = 4.13407323_wp)
+      & s8 = 1.69460052_wp, a1 = 0.28904684_wp, a2 = 4.13407323_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "02")
    call new_d4s_model(error, d4s, mol)
@@ -317,7 +317,7 @@ subroutine test_tpssd4_mb03(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.91130849_wp, a1 = 0.43332851_wp, a2 = 4.56986797_wp)
+      & s8 = 1.91130849_wp, a1 = 0.43332851_wp, a2 = 4.56986797_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "03")
    call new_d4_model(error, d4, mol)
@@ -334,7 +334,7 @@ subroutine test_tpssd4s_mb03(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.91130849_wp, a1 = 0.43332851_wp, a2 = 4.56986797_wp)
+      & s8 = 1.91130849_wp, a1 = 0.43332851_wp, a2 = 4.56986797_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "03")
    call new_d4s_model(error, d4s, mol)
@@ -351,7 +351,7 @@ subroutine test_pwpb95d4_mb04(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 0.82_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = -0.34639127_wp, a1 = 0.41080636_wp, a2 = 3.83878274_wp)
+      & s8 = -0.34639127_wp, a1 = 0.41080636_wp, a2 = 3.83878274_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "04")
    call new_d4_model(error, d4, mol)
@@ -368,7 +368,7 @@ subroutine test_pwpb95d4s_mb04(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 0.82_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = -0.34639127_wp, a1 = 0.41080636_wp, a2 = 3.83878274_wp)
+      & s8 = -0.34639127_wp, a1 = 0.41080636_wp, a2 = 3.83878274_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "04")
    call new_d4s_model(error, d4s, mol)
@@ -385,7 +385,7 @@ subroutine test_b2plypd4_mb05(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 0.64_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.15117773_wp, a1 = 0.42666167_wp, a2 = 4.73635790_wp)
+      & s8 = 1.15117773_wp, a1 = 0.42666167_wp, a2 = 4.73635790_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "05")
    call new_d4_model(error, d4, mol)
@@ -402,7 +402,7 @@ subroutine test_b2plypd4s_mb05(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 0.64_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.15117773_wp, a1 = 0.42666167_wp, a2 = 4.73635790_wp)
+      & s8 = 1.15117773_wp, a1 = 0.42666167_wp, a2 = 4.73635790_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "05")
    call new_d4s_model(error, d4s, mol)
@@ -419,7 +419,7 @@ subroutine test_pw6b95d4_mb06(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = -0.31629935_wp, a1 = 0.03999357_wp, a2 = 5.83690254_wp)
+      & s8 = -0.31629935_wp, a1 = 0.03999357_wp, a2 = 5.83690254_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "06")
    call new_d4_model(error, d4, mol)
@@ -436,7 +436,7 @@ subroutine test_pw6b95d4s_mb06(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = -0.31629935_wp, a1 = 0.03999357_wp, a2 = 5.83690254_wp)
+      & s8 = -0.31629935_wp, a1 = 0.03999357_wp, a2 = 5.83690254_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "06")
    call new_d4s_model(error, d4s, mol)
@@ -453,7 +453,7 @@ subroutine test_olypd4_mb07(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 2.74836820_wp, a1 = 0.60184498_wp, a2 = 2.53292167_wp)
+      & s8 = 2.74836820_wp, a1 = 0.60184498_wp, a2 = 2.53292167_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "07")
    call new_d4_model(error, d4, mol)
@@ -470,7 +470,7 @@ subroutine test_olypd4s_mb07(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 2.74836820_wp, a1 = 0.60184498_wp, a2 = 2.53292167_wp)
+      & s8 = 2.74836820_wp, a1 = 0.60184498_wp, a2 = 2.53292167_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "07")
    call new_d4s_model(error, d4s, mol)
@@ -488,7 +488,7 @@ subroutine test_pbe0d4_mb08(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.20065498_wp, a1 = 0.40085597_wp, a2 = 5.02928789_wp)
+      & s8 = 1.20065498_wp, a1 = 0.40085597_wp, a2 = 5.02928789_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "08")
    call new_d4_model(error, d4, mol)
@@ -505,7 +505,7 @@ subroutine test_pbe0d4s_mb08(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.20065498_wp, a1 = 0.40085597_wp, a2 = 5.02928789_wp)
+      & s8 = 1.20065498_wp, a1 = 0.40085597_wp, a2 = 5.02928789_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "08")
    call new_d4s_model(error, d4s, mol)
@@ -523,7 +523,7 @@ subroutine test_rpbed4atm_mb09(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.31183787_wp, a1 = 0.46169493_wp, a2 = 3.15711757_wp)
+      & s8 = 1.31183787_wp, a1 = 0.46169493_wp, a2 = 3.15711757_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "09")
    call new_d4_model(error, d4, mol)
@@ -540,7 +540,7 @@ subroutine test_rpbed4satm_mb09(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.31183787_wp, a1 = 0.46169493_wp, a2 = 3.15711757_wp)
+      & s8 = 1.31183787_wp, a1 = 0.46169493_wp, a2 = 3.15711757_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "09")
    call new_d4s_model(error, d4s, mol)
@@ -558,7 +558,7 @@ subroutine test_b2gpplypd4atm_mb10(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 0.56_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 0.94633372_wp, a1 = 0.42907301_wp, a2 = 5.18802602_wp)
+      & s8 = 0.94633372_wp, a1 = 0.42907301_wp, a2 = 5.18802602_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "10")
    call new_d4_model(error, d4, mol)
@@ -575,7 +575,7 @@ subroutine test_b2gpplypd4satm_mb10(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 0.56_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 0.94633372_wp, a1 = 0.42907301_wp, a2 = 5.18802602_wp)
+      & s8 = 0.94633372_wp, a1 = 0.42907301_wp, a2 = 5.18802602_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "10")
    call new_d4s_model(error, d4s, mol)
@@ -592,7 +592,7 @@ subroutine test_lh14tcalpbed4atm_mb11(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.27677253_wp, a1 = 0.38128670_wp, a2 = 4.91698883_wp)
+      & s8 = 1.27677253_wp, a1 = 0.38128670_wp, a2 = 4.91698883_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "11")
    call new_d4_model(error, d4, mol)
@@ -609,7 +609,7 @@ subroutine test_lh14tcalpbed4satm_mb11(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.27677253_wp, a1 = 0.38128670_wp, a2 = 4.91698883_wp)
+      & s8 = 1.27677253_wp, a1 = 0.38128670_wp, a2 = 4.91698883_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "11")
    call new_d4s_model(error, d4s, mol)
@@ -626,7 +626,7 @@ subroutine test_b1b95d4atm_mb12(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.27701162_wp, a1 = 0.40554715_wp, a2 = 4.63323074_wp)
+      & s8 = 1.27701162_wp, a1 = 0.40554715_wp, a2 = 4.63323074_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "12")
    call new_d4_model(error, d4, mol)
@@ -643,7 +643,7 @@ subroutine test_b1b95d4satm_mb12(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.27701162_wp, a1 = 0.40554715_wp, a2 = 4.63323074_wp)
+      & s8 = 1.27701162_wp, a1 = 0.40554715_wp, a2 = 4.63323074_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "12")
    call new_d4s_model(error, d4s, mol)
@@ -661,7 +661,7 @@ subroutine test_m06ld4atm_mb13(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 0.59493760_wp, a1 = 0.71422359_wp, a2 = 6.35314182_wp)
+      & s8 = 0.59493760_wp, a1 = 0.71422359_wp, a2 = 6.35314182_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "13")
    call new_d4_model(error, d4, mol)
@@ -678,7 +678,7 @@ subroutine test_m06ld4satm_mb13(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 0.59493760_wp, a1 = 0.71422359_wp, a2 = 6.35314182_wp)
+      & s8 = 0.59493760_wp, a1 = 0.71422359_wp, a2 = 6.35314182_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "13")
    call new_d4s_model(error, d4s, mol)
@@ -695,7 +695,7 @@ subroutine test_tpsshd4atm_mb14(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.85897750_wp, a1 = 0.44286966_wp, a2 = 4.60230534_wp)
+      & s8 = 1.85897750_wp, a1 = 0.44286966_wp, a2 = 4.60230534_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "14")
    call new_d4_model(error, d4, mol)
@@ -712,7 +712,7 @@ subroutine test_tpsshd4satm_mb14(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.85897750_wp, a1 = 0.44286966_wp, a2 = 4.60230534_wp)
+      & s8 = 1.85897750_wp, a1 = 0.44286966_wp, a2 = 4.60230534_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "14")
    call new_d4s_model(error, d4s, mol)
@@ -729,7 +729,7 @@ subroutine test_hfd4atm_mb15(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.61679827_wp, a1 = 0.44959224_wp, a2 = 3.35743605_wp)
+      & s8 = 1.61679827_wp, a1 = 0.44959224_wp, a2 = 3.35743605_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "15")
    call new_d4_model(error, d4, mol)
@@ -746,7 +746,7 @@ subroutine test_hfd4satm_mb15(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.61679827_wp, a1 = 0.44959224_wp, a2 = 3.35743605_wp)
+      & s8 = 1.61679827_wp, a1 = 0.44959224_wp, a2 = 3.35743605_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "15")
    call new_d4s_model(error, d4s, mol)
@@ -763,7 +763,7 @@ subroutine test_camb3lypd4atm_mb16(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.74407961_wp, a1 = 0.40137870_wp, a2 = 5.18731225_wp)
+      & s8 = 1.74407961_wp, a1 = 0.40137870_wp, a2 = 5.18731225_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "16")
    call new_d4_model(error, d4, mol)
@@ -780,7 +780,7 @@ subroutine test_camb3lypd4satm_mb16(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.74407961_wp, a1 = 0.40137870_wp, a2 = 5.18731225_wp)
+      & s8 = 1.74407961_wp, a1 = 0.40137870_wp, a2 = 5.18731225_wp, a3=0.0_wp)
 
    call get_structure(mol, "MB16-43", "16")
    call new_d4s_model(error, d4s, mol)
@@ -797,7 +797,7 @@ subroutine test_r2scan3c_mb01(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.00_wp, s9 = 2.00_wp, alp = 16.0_wp, &
-      & s8 = 0.00_wp, a1 = 0.42_wp, a2 = 5.65_wp)
+      & s8 = 0.00_wp, a1 = 0.42_wp, a2 = 5.65_wp, a3 = 0.0_wp)
    
    real(wp), parameter :: ref = -5.7825025556386862E-003_wp
 
@@ -816,7 +816,7 @@ subroutine test_r2scan3c_d4s_mb01(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.00_wp, s9 = 2.00_wp, alp = 16.0_wp, &
-      & s8 = 0.00_wp, a1 = 0.42_wp, a2 = 5.65_wp)
+      & s8 = 0.00_wp, a1 = 0.42_wp, a2 = 5.65_wp, a3 = 0.0_wp)
    
    real(wp), parameter :: ref = -6.1176284425895639E-003_wp
 
@@ -836,7 +836,7 @@ subroutine test_tpsshd4atm_amf3(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.85897750_wp, a1 = 0.44286966_wp, a2 = 4.60230534_wp)
+      & s8 = 1.85897750_wp, a1 = 0.44286966_wp, a2 = 4.60230534_wp, a3=0.0_wp)
 
    real(wp), parameter :: ref = -2.4882226918209061E-003_wp
 
@@ -871,7 +871,7 @@ subroutine test_tpsshd4satm_amf3(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 1.0_wp, alp = 16.0_wp, &
-      & s8 = 1.85897750_wp, a1 = 0.44286966_wp, a2 = 4.60230534_wp)
+      & s8 = 1.85897750_wp, a1 = 0.44286966_wp, a2 = 4.60230534_wp, a3=0.0_wp)
 
    real(wp), parameter :: ref = -2.5523952752362009E-003_wp
 
@@ -906,7 +906,7 @@ subroutine test_actinides_d4(error)
    type(d4_model) :: d4
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp)
+      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp, a3=0.0_wp)
 
    real(wp), parameter :: ref = -0.17966420554540324_wp
    
@@ -948,7 +948,7 @@ subroutine test_actinides_d4s(error)
    type(d4s_model) :: d4s
    type(rational_damping_param) :: param = rational_damping_param(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp)
+      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp, a3=0.0_wp)
 
    real(wp), parameter :: ref = -0.18578133252612403_wp
    

@@ -70,6 +70,9 @@ module dftd4_model_type
       !> Reference C6 coefficients
       real(wp), allocatable :: c6(:, :, :, :)
 
+      !> Damping function type
+      integer :: damping_type
+
       !> Multicharge model
       class(mchrg_model_type), allocatable :: mchrg 
 

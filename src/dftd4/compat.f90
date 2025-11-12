@@ -123,6 +123,7 @@ subroutine d4_calculation(io, env, options, mol_, param_, res)
       & s9=param_%s9, &
       & a1=param_%a1, &
       & a2=param_%a2, &
+      & a3=0.0_wp, &
       & alp=param_%alp)
 
    allocate(energy, gradient(3, mol%nat), sigma(3, 3))

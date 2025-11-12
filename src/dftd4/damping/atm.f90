@@ -24,13 +24,47 @@ module dftd4_damping_atm
 
    public :: get_atm_dispersion
 
+   abstract interface
+      !> Average parameters
+      subroutine get_fdmp_interface(rij, rik, rjk, r2ij, r2ik, r2jk, rrij, rrik, rrjk, a1, a2, a3, alp, fdmp)
+         import :: wp
+         !> interatomic distance ij
+         real(wp), intent(in) :: rij
+         !> interatomic distance ik
+         real(wp), intent(in) :: rik
+         !> interatomic distance jk
+         real(wp), intent(in) :: rjk
+         !> Squared interatomic distance ij
+         real(wp), intent(in) :: r2ij
+         !> Squared interatomic distance ik
+         real(wp), intent(in) :: r2ik
+         !> Squared interatomic distance jk
+         real(wp), intent(in) :: r2jk
+         !> Product of expectation values ij
+         real(wp), intent(in) :: rrij
+         !> Product of expectation values ik
+         real(wp), intent(in) :: rrik
+         !> Product of expectation values jk
+         real(wp), intent(in) :: rrjk
+         !> Damping parameter a1
+         real(wp), intent(in) :: a1
+         !> Damping parameter a2
+         real(wp), intent(in) :: a2
+         !> Damping parameter a3
+         real(wp), intent(in) :: a3
+         !> Exponent of zero damping function
+         real(wp), intent(in) :: alp
+         !> fdmp value
+         real(wp), intent(out) :: fdmp
+      end subroutine get_fdmp_interface
+   end interface
 
 contains
 
 
 !> Evaluation of the dispersion energy expression
-subroutine get_atm_dispersion(mol, trans, cutoff, s9, a1, a2, alp, r4r2, &
-      & c6, dc6dcn, dc6dq, energy, dEdcn, dEdq, gradient, sigma)
+subroutine get_atm_dispersion(mol, trans, cutoff, s9, a1, a2, a3, alp, r4r2, &
+      & c6, dc6dcn, dc6dq, energy, dEdcn, dEdq, gradient, sigma, damping_type)
 
    !> Molecular structure data
    class(structure_type), intent(in) :: mol
@@ -49,6 +83,9 @@ subroutine get_atm_dispersion(mol, trans, cutoff, s9, a1, a2, alp, r4r2, &
 
    !> Offset parameter for critical radius
    real(wp), intent(in) :: a2
+
+   !> Exponent parameter for critical radius damping
+   real(wp), intent(in) :: a3
 
    !> Exponent of zero damping function
    real(wp), intent(in) :: alp
@@ -82,6 +119,9 @@ subroutine get_atm_dispersion(mol, trans, cutoff, s9, a1, a2, alp, r4r2, &
 
    logical :: grad
 
+   !> Type of damping function to use
+   integer, intent(in), optional :: damping_type
+
    if (abs(s9) < epsilon(1.0_wp)) return
    grad = present(dc6dcn) .and. present(dEdcn) .and. present(dc6dq) &
       & .and. present(dEdq) .and. present(gradient) .and. present(sigma)
@@ -90,16 +130,16 @@ subroutine get_atm_dispersion(mol, trans, cutoff, s9, a1, a2, alp, r4r2, &
       call get_atm_dispersion_derivs(mol, trans, cutoff, s9, a1, a2, alp, r4r2, &
          & c6, dc6dcn, dc6dq, energy, dEdcn, dEdq, gradient, sigma)
    else
-      call get_atm_dispersion_energy(mol, trans, cutoff, s9, a1, a2, alp, r4r2, &
-         & c6, energy)
+      call get_atm_dispersion_energy(mol, trans, cutoff, s9, a1, a2, a3, alp, r4r2, &
+         & c6, energy, damping_type)
    end if
 
 end subroutine get_atm_dispersion
 
 
 !> Evaluation of the dispersion energy expression
-subroutine get_atm_dispersion_energy(mol, trans, cutoff, s9, a1, a2, alp, r4r2, &
-      & c6, energy)
+subroutine get_atm_dispersion_energy(mol, trans, cutoff, s9, a1, a2, a3, alp, r4r2, &
+      & c6, energy, damping_type)
 
    !> Molecular structure data
    class(structure_type), intent(in) :: mol
@@ -119,6 +159,9 @@ subroutine get_atm_dispersion_energy(mol, trans, cutoff, s9, a1, a2, alp, r4r2, 
    !> Offset parameter for critical radius
    real(wp), intent(in) :: a2
 
+   !> Exponent parameter for critical radius damping
+   real(wp), intent(in) :: a3
+
    !> Exponent of zero damping function
    real(wp), intent(in) :: alp
 
@@ -131,21 +174,42 @@ subroutine get_atm_dispersion_energy(mol, trans, cutoff, s9, a1, a2, alp, r4r2, 
    !> Dispersion energy
    real(wp), intent(inout) :: energy(:)
 
+   !> Type of damping function to use
+   integer, intent(in), optional :: damping_type
+
    integer :: iat, jat, kat, izp, jzp, kzp, jtr, ktr
-   real(wp) :: vij(3), vjk(3), vik(3), r2ij, r2jk, r2ik, c6ij, c6jk, c6ik, triple
+   real(wp) :: vij(3), vjk(3), vik(3), r2ij, r2jk, r2ik, c6ij, c6jk, c6ik, triple, rij, rjk, rik, rrij, rrjk, rrik
    real(wp) :: r0ij, r0jk, r0ik, r0, r1, r2, r3, r5, rr, fdmp, ang
    real(wp) :: cutoff2, c9, dE
+
+   procedure(get_fdmp_interface), pointer :: get_fdmp
 
    ! Thread-private arrays for reduction
    ! Set to 0 explicitly as the shared variants are potentially non-zero (inout)
    real(wp), allocatable :: energy_local(:)
 
+   if (present(damping_type)) then
+      select case (damping_type)
+      case (0)
+         get_fdmp => get_fdmp_zero
+      case (1)
+         get_fdmp => get_fdmp_erf_bj
+      case (2)
+         get_fdmp => get_fdmp_tanh_bj
+      case default
+         write(*, *) "Error: Unknown damping type in get_dispersion_matrix:", damping_type
+         stop
+      end select
+   else
+      get_fdmp => get_fdmp_zero
+   end if
+
    cutoff2 = cutoff*cutoff
 
    !$omp parallel default(none) &
-   !$omp shared(mol, trans, c6, s9, a1, a2, alp, r4r2, cutoff2) &
+   !$omp shared(mol, trans, c6, s9, a1, a2, a3, alp, r4r2, cutoff2, get_fdmp) &
    !$omp private(iat, jat, kat, izp, jzp, kzp, jtr, ktr, vij, vjk, vik, &
-   !$omp& r2ij, r2jk, r2ik, c6ij, c6jk, c6ik, triple, r0ij, r0jk, r0ik, r0, &
+   !$omp& rij, rjk, rik, rrij, rrjk, rrik, r2ij, r2jk, r2ik, c6ij, c6jk, c6ik, triple, r0ij, r0jk, r0ik, r0, &
    !$omp& r1, r2, r3, r5, rr, fdmp, ang, c9, dE) &
    !$omp shared(energy) &
    !$omp private(energy_local)
@@ -156,7 +220,7 @@ subroutine get_atm_dispersion_energy(mol, trans, cutoff, s9, a1, a2, alp, r4r2, 
       do jat = 1, iat
          jzp = mol%id(jat)
          c6ij = c6(jat, iat)
-         r0ij = a1 * sqrt(3*r4r2(jzp)*r4r2(izp)) + a2
+         ! r0ij = a1 * sqrt(3*r4r2(jzp)*r4r2(izp)) + a2
          do jtr = 1, size(trans, 2)
             vij(:) = mol%xyz(:, jat) + trans(:, jtr) - mol%xyz(:, iat)
             r2ij = vij(1)*vij(1) + vij(2)*vij(2) + vij(3)*vij(3)
@@ -166,9 +230,9 @@ subroutine get_atm_dispersion_energy(mol, trans, cutoff, s9, a1, a2, alp, r4r2, 
                c6ik = c6(kat, iat)
                c6jk = c6(kat, jat)
                c9 = -s9 * sqrt(abs(c6ij*c6ik*c6jk))
-               r0ik = a1 * sqrt(3*r4r2(kzp)*r4r2(izp)) + a2
-               r0jk = a1 * sqrt(3*r4r2(kzp)*r4r2(jzp)) + a2
-               r0 = r0ij * r0ik * r0jk
+               ! r0ik = a1 * sqrt(3*r4r2(kzp)*r4r2(izp)) + a2
+               ! r0jk = a1 * sqrt(3*r4r2(kzp)*r4r2(jzp)) + a2
+               ! r0 = r0ij * r0ik * r0jk
                triple = triple_scale(iat, jat, kat)
                do ktr = 1, size(trans, 2)
                   vik(:) = mol%xyz(:, kat) + trans(:, ktr) - mol%xyz(:, iat)
@@ -183,7 +247,19 @@ subroutine get_atm_dispersion_energy(mol, trans, cutoff, s9, a1, a2, alp, r4r2, 
                   r3 = r2 * r1
                   r5 = r3 * r2
 
-                  fdmp = 1.0_wp / (1.0_wp + 6.0_wp * (r0 / r1)**(alp / 3.0_wp))
+
+                  rij = sqrt(r2ij)
+                  rik = sqrt(r2ik)
+                  rjk = sqrt(r2jk)
+
+                  rrij = 3*r4r2(jzp)*r4r2(izp)
+                  rrik = 3*r4r2(kzp)*r4r2(izp)
+                  rrjk = 3*r4r2(kzp)*r4r2(jzp)
+
+                  !fdmp = 1.0_wp / (1.0_wp + 6.0_wp * (r0 / r1)**(alp / 3.0_wp))
+
+                  call get_fdmp(rij, rik, rjk, r2ij, r2ik, r2jk, rrij, rrik, rrjk, a1, a2, a3, alp, fdmp)
+
                   ang = 0.375_wp*(r2ij + r2jk - r2ik)*(r2ij - r2jk + r2ik)&
                      & *(-r2ij + r2jk + r2ik) / r5 + 1.0_wp / r3
 
@@ -430,6 +506,139 @@ elemental function triple_scale(ii, jj, kk) result(triple)
    end if
 
 end function triple_scale
+
+
+subroutine get_fdmp_zero(rij, rik, rjk, r2ij, r2ik, r2jk, rrij, rrik, rrjk, a1, a2, a3, alp, fdmp)
+   !> interatomic distance ij
+   real(wp), intent(in) :: rij
+   !> interatomic distance ik
+   real(wp), intent(in) :: rik
+   !> interatomic distance jk
+   real(wp), intent(in) :: rjk
+   !> Squared interatomic distance ij
+   real(wp), intent(in) :: r2ij
+   !> Squared interatomic distance ik
+   real(wp), intent(in) :: r2ik
+   !> Squared interatomic distance jk
+   real(wp), intent(in) :: r2jk
+   !> Product of expectation values ij
+   real(wp), intent(in) :: rrij
+   !> Product of expectation values ik
+   real(wp), intent(in) :: rrik
+   !> Product of expectation values jk
+   real(wp), intent(in) :: rrjk
+   !> Damping parameter a1
+   real(wp), intent(in) :: a1
+   !> Damping parameter a2
+   real(wp), intent(in) :: a2
+   !> Damping parameter a3
+   real(wp), intent(in) :: a3
+   !> Exponent of zero damping function
+   real(wp), intent(in) :: alp
+   !> fdmp value
+   real(wp), intent(out) :: fdmp
+
+   real(wp) :: r0ij, r0ik, r0jk, r0, r1, r2
+
+   r2 = r2ij*r2ik*r2jk
+   r1 = sqrt(r2)
+
+   r0ij = a1 * sqrt(rrij) + a2
+   r0ik = a1 * sqrt(rrik) + a2
+   r0jk = a1 * sqrt(rrjk) + a2
+   r0 = r0ij * r0ik * r0jk
+
+   fdmp = 1.0_wp / (1.0_wp + 6.0_wp * (r0 / r1)**(alp / 3.0_wp))
+
+end subroutine get_fdmp_zero
+
+
+subroutine get_fdmp_erf_bj(rij, rik, rjk, r2ij, r2ik, r2jk, rrij, rrik, rrjk, a1, a2, a3, alp, fdmp)
+   !> interatomic distance ij
+   real(wp), intent(in) :: rij
+   !> interatomic distance ik
+   real(wp), intent(in) :: rik
+   !> interatomic distance jk
+   real(wp), intent(in) :: rjk
+   !> Squared interatomic distance ij
+   real(wp), intent(in) :: r2ij
+   !> Squared interatomic distance ik
+   real(wp), intent(in) :: r2ik
+   !> Squared interatomic distance jk
+   real(wp), intent(in) :: r2jk
+   !> Product of expectation values ij
+   real(wp), intent(in) :: rrij
+   !> Product of expectation values ik
+   real(wp), intent(in) :: rrik
+   !> Product of expectation values jk
+   real(wp), intent(in) :: rrjk
+   !> Damping parameter a1
+   real(wp), intent(in) :: a1
+   !> Damping parameter a2
+   real(wp), intent(in) :: a2
+   !> Damping parameter a3
+   real(wp), intent(in) :: a3
+   !> Exponent of zero damping function
+   real(wp), intent(in) :: alp
+   !> fdmp value
+   real(wp), intent(out) :: fdmp
+
+   real(wp) :: r0ij, r0ik, r0jk, numer, denom
+
+   r0ij = a1 * sqrt(rrij) * 0.5_wp * (1.0_wp + erf(- a3 * (rij - sqrt(rrij))))
+   r0ik = a1 * sqrt(rrik) * 0.5_wp * (1.0_wp + erf(- a3 * (rik - sqrt(rrik))))
+   r0jk = a1 * sqrt(rrjk) * 0.5_wp * (1.0_wp + erf(- a3 * (rjk - sqrt(rrjk))))
+
+   numer = (rij * r2ij) * (rik * r2ik) * (rjk * r2jk)
+   denom = (rij + r0ij)**3.0_wp * (rik + r0ik)**3.0_wp * (rjk + r0jk)**3.0_wp
+
+   fdmp = numer / denom
+
+end subroutine get_fdmp_erf_bj
+
+
+subroutine get_fdmp_tanh_bj(rij, rik, rjk, r2ij, r2ik, r2jk, rrij, rrik, rrjk, a1, a2, a3, alp, fdmp)
+   !> interatomic distance ij
+   real(wp), intent(in) :: rij
+   !> interatomic distance ik
+   real(wp), intent(in) :: rik
+   !> interatomic distance jk
+   real(wp), intent(in) :: rjk
+   !> Squared interatomic distance ij
+   real(wp), intent(in) :: r2ij
+   !> Squared interatomic distance ik
+   real(wp), intent(in) :: r2ik
+   !> Squared interatomic distance jk
+   real(wp), intent(in) :: r2jk
+   !> Product of expectation values ij
+   real(wp), intent(in) :: rrij
+   !> Product of expectation values ik
+   real(wp), intent(in) :: rrik
+   !> Product of expectation values jk
+   real(wp), intent(in) :: rrjk
+   !> Damping parameter a1
+   real(wp), intent(in) :: a1
+   !> Damping parameter a2
+   real(wp), intent(in) :: a2
+   !> Damping parameter a3
+   real(wp), intent(in) :: a3
+   !> Exponent of zero damping function
+   real(wp), intent(in) :: alp
+   !> fdmp value
+   real(wp), intent(out) :: fdmp
+
+   real(wp) :: r0ij, r0ik, r0jk, numer, denom
+
+   r0ij = a1 * sqrt(rrij) * 0.5_wp * (1.0_wp + tanh(- a3 * (rij - sqrt(rrij))))
+   r0ik = a1 * sqrt(rrik) * 0.5_wp * (1.0_wp + tanh(- a3 * (rik - sqrt(rrik))))
+   r0jk = a1 * sqrt(rrjk) * 0.5_wp * (1.0_wp + tanh(- a3 * (rjk - sqrt(rrjk))))
+
+   numer = (rij * r2ij) * (rik * r2ik) * (rjk * r2jk)
+   denom = (rij + r0ij)**3.0_wp * (rik + r0ik)**3.0_wp * (rjk + r0jk)**3.0_wp
+
+   fdmp = numer / denom
+
+end subroutine get_fdmp_tanh_bj
 
 
 end module dftd4_damping_atm

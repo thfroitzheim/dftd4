@@ -34,6 +34,7 @@ module dftd4_damping_rational
       real(wp) :: s9 = 1.0_wp
       real(wp) :: a1
       real(wp) :: a2
+      real(wp) :: a3
       real(wp) :: alp = 16.0_wp
    contains
 
@@ -51,13 +52,36 @@ module dftd4_damping_rational
 
    end type rational_damping_param
 
+   
+   abstract interface
+      !> Average parameters
+      subroutine get_t6_t8_interface(r, r2, rrij, a1, a2, a3, t6, t8)
+         import :: wp
+         !> Interatomic distance
+         real(wp), intent(in) :: r
+         !> Squared interatomic distance
+         real(wp), intent(in) :: r2
+         !> Product of expectation values
+         real(wp), intent(in) :: rrij
+         !> Damping parameter a1
+         real(wp), intent(in) :: a1
+         !> Damping parameter a2
+         real(wp), intent(in) :: a2
+         !> Damping parameter a3
+         real(wp), intent(in) :: a3
+         !> Modified t6 value
+         real(wp), intent(out) :: t6
+         !> Modified t8 value
+         real(wp), intent(out) :: t8
+      end subroutine get_t6_t8_interface
+   end interface
 
 contains
 
 
 !> Evaluation of the dispersion energy expression
 subroutine get_dispersion2(self, mol, trans, cutoff, r4r2, c6, dc6dcn, dc6dq, &
-      & energy, dEdcn, dEdq, gradient, sigma)
+      & energy, dEdcn, dEdq, gradient, sigma, damping_type)
    !DEC$ ATTRIBUTES DLLEXPORT :: get_dispersion2
 
    !> Damping parameters
@@ -101,6 +125,9 @@ subroutine get_dispersion2(self, mol, trans, cutoff, r4r2, c6, dc6dcn, dc6dq, &
 
    logical :: grad
 
+   !> Type of damping function
+   integer, intent(in), optional :: damping_type
+
    if (abs(self%s6) < epsilon(1.0_wp) .and. abs(self%s8) < epsilon(1.0_wp)) return
    grad = present(dc6dcn) .and. present(dEdcn) .and. present(dc6dq) &
       & .and. present(dEdq) .and. present(gradient) .and. present(sigma)
@@ -109,14 +136,14 @@ subroutine get_dispersion2(self, mol, trans, cutoff, r4r2, c6, dc6dcn, dc6dq, &
       call get_dispersion_derivs(self, mol, trans, cutoff, r4r2, c6, dc6dcn, dc6dq, &
          & energy, dEdcn, dEdq, gradient, sigma)
    else
-      call get_dispersion_energy(self, mol, trans, cutoff, r4r2, c6, energy)
+      call get_dispersion_energy(self, mol, trans, cutoff, r4r2, c6, energy, damping_type)
    end if
 
 end subroutine get_dispersion2
 
 
 !> Evaluation of the dispersion energy expression
-subroutine get_dispersion_energy(self, mol, trans, cutoff, r4r2, c6, energy)
+subroutine get_dispersion_energy(self, mol, trans, cutoff, r4r2, c6, energy, damping_type)
 
    !> Damping parameters
    class(rational_damping_param), intent(in) :: self
@@ -139,18 +166,39 @@ subroutine get_dispersion_energy(self, mol, trans, cutoff, r4r2, c6, energy)
    !> Dispersion energy
    real(wp), intent(inout) :: energy(:)
 
+   !> Type of damping function
+   integer, intent(in), optional :: damping_type
+
    integer :: iat, jat, izp, jzp, jtr
-   real(wp) :: vec(3), r2, cutoff2, r0ij, rrij, c6ij, t6, t8, edisp, dE
+   real(wp) :: vec(3), r, r2, cutoff2, r0ij, rrij, c6ij, t6, t8, edisp, dE
+
+   procedure(get_t6_t8_interface), pointer :: get_t6_t8
 
    ! Thread-private array for reduction
    ! Set to 0 explicitly as the shared variants are potentially non-zero (inout)
    real(wp), allocatable :: energy_local(:)
 
+   if (present(damping_type)) then
+      select case (damping_type)
+      case (0)
+         get_t6_t8 => get_t6_t8_bj
+      case (1)
+         get_t6_t8 => get_t6_t8_erf_bj
+      case (2)
+         get_t6_t8 => get_t6_t8_tanh_bj
+      case default
+         write(*, *) "Error: Unknown damping type in get_dispersion_matrix:", damping_type
+         stop
+      end select
+   else
+      get_t6_t8 => get_t6_t8_bj
+   end if
+
    cutoff2 = cutoff*cutoff
 
    !$omp parallel default(none) &
-   !$omp shared(mol, self, c6, trans, cutoff2, r4r2) &
-   !$omp private(iat, jat, izp, jzp, jtr, vec, r2, r0ij, rrij, c6ij, &
+   !$omp shared(mol, self, c6, trans, cutoff2, r4r2, get_t6_t8) &
+   !$omp private(iat, jat, izp, jzp, jtr, vec, r, r2, r0ij, rrij, c6ij, &
    !$omp& t6, t8, edisp, dE) &
    !$omp shared(energy) &
    !$omp private(energy_local)
@@ -166,10 +214,13 @@ subroutine get_dispersion_energy(self, mol, trans, cutoff, r4r2, c6, energy)
          do jtr = 1, size(trans, 2)
             vec(:) = mol%xyz(:, iat) - (mol%xyz(:, jat) + trans(:, jtr))
             r2 = vec(1)*vec(1) + vec(2)*vec(2) + vec(3)*vec(3)
+            r = sqrt(r2)
             if (r2 > cutoff2 .or. r2 < epsilon(1.0_wp)) cycle
+            
+            ! t6 = 1.0_wp/(r2**3 + r0ij**6)
+            ! t8 = 1.0_wp/(r2**4 + r0ij**8)
 
-            t6 = 1.0_wp/(r2**3 + r0ij**6)
-            t8 = 1.0_wp/(r2**4 + r0ij**8)
+            call get_t6_t8(r, r2, rrij, self%a1, self%a2, self%a3, t6, t8)
 
             edisp = self%s6*t6 + self%s8*rrij*t8
 
@@ -190,6 +241,89 @@ subroutine get_dispersion_energy(self, mol, trans, cutoff, r4r2, c6, energy)
    !$omp end parallel
 
 end subroutine get_dispersion_energy
+
+
+subroutine get_t6_t8_bj(r, r2, rrij, a1, a2, a3, t6, t8)
+   !> Interatomic distance
+   real(wp), intent(in) :: r
+   !> Squared interatomic distance
+   real(wp), intent(in) :: r2
+   !> Product of expectation values
+   real(wp), intent(in) :: rrij
+   !> Damping parameter a1
+   real(wp), intent(in) :: a1
+   !> Damping parameter a2
+   real(wp), intent(in) :: a2
+   !> Damping parameter a3
+   real(wp), intent(in) :: a3
+   !> Modified t6 value
+   real(wp), intent(out) :: t6
+   !> Modified t8 value
+   real(wp), intent(out) :: t8
+
+   real(wp) :: r0ij
+
+   r0ij = a1 * sqrt(rrij) + a2
+
+   t6 = 1.0_wp/(r2**3 + r0ij**6)
+   t8 = 1.0_wp/(r2**4 + r0ij**8)
+
+end subroutine get_t6_t8_bj
+
+
+subroutine get_t6_t8_erf_bj(r, r2, rrij, a1, a2, a3, t6, t8)
+   !> Interatomic distance
+   real(wp), intent(in) :: r
+   !> Squared interatomic distance
+   real(wp), intent(in) :: r2
+   !> Product of expectation values
+   real(wp), intent(in) :: rrij
+   !> Damping parameter a1
+   real(wp), intent(in) :: a1
+   !> Damping parameter a2
+   real(wp), intent(in) :: a2
+   !> Damping parameter a3
+   real(wp), intent(in) :: a3
+   !> Modified t6 value
+   real(wp), intent(out) :: t6
+   !> Modified t8 value
+   real(wp), intent(out) :: t8
+
+   real(wp) :: r0ij
+
+   r0ij = a1 * sqrt(rrij) * 0.5_wp * (1.0_wp + erf(- a3 * (r - sqrt(rrij))))
+   
+   t6 = 1.0_wp/(r + r0ij)**6
+   t8 = 1.0_wp/(r + r0ij)**8
+
+end subroutine get_t6_t8_erf_bj
+
+subroutine get_t6_t8_tanh_bj(r, r2, rrij, a1, a2, a3, t6, t8)
+   !> Interatomic distance
+   real(wp), intent(in) :: r
+   !> Squared interatomic distance
+   real(wp), intent(in) :: r2
+   !> Product of expectation values
+   real(wp), intent(in) :: rrij
+   !> Damping parameter a1
+   real(wp), intent(in) :: a1
+   !> Damping parameter a2
+   real(wp), intent(in) :: a2
+   !> Dampified parameter a3
+   real(wp), intent(in) :: a3
+   !> Modified t6 value
+   real(wp), intent(out) :: t6
+   !> Modified t8 value
+   real(wp), intent(out) :: t8
+
+   real(wp) :: r0ij
+
+   r0ij = a1 * sqrt(rrij) * 0.5_wp * (1.0_wp + tanh(- a3 * (r - sqrt(rrij))))
+
+   t6 = 1.0_wp/(r + r0ij)**6
+   t8 = 1.0_wp/(r + r0ij)**8
+
+end subroutine get_t6_t8_tanh_bj
 
 
 !> Evaluation of the dispersion energy expression
@@ -322,7 +456,7 @@ end subroutine get_dispersion_derivs
 
 !> Evaluation of the dispersion energy expression
 subroutine get_dispersion3(self, mol, trans, cutoff, r4r2, c6, dc6dcn, dc6dq, &
-      & energy, dEdcn, dEdq, gradient, sigma)
+      & energy, dEdcn, dEdq, gradient, sigma, damping_type)
    !DEC$ ATTRIBUTES DLLEXPORT :: get_dispersion3
 
    !> Damping parameters
@@ -364,9 +498,12 @@ subroutine get_dispersion3(self, mol, trans, cutoff, r4r2, c6, dc6dcn, dc6dq, &
    !> Dispersion virial
    real(wp), intent(inout), optional :: sigma(:, :)
 
-   call get_atm_dispersion(mol, trans, cutoff, self%s9, self%a1, self%a2, &
+   !> Type of damping function to use
+   integer, intent(in), optional :: damping_type
+
+   call get_atm_dispersion(mol, trans, cutoff, self%s9, self%a1, self%a2, self%a3, &
       & self%alp, r4r2, c6, dc6dcn, dc6dq, energy, dEdcn, dEdq, &
-      & gradient, sigma)
+      & gradient, sigma, damping_type)
 
 end subroutine get_dispersion3
 

@@ -111,7 +111,7 @@ subroutine get_dispersion(mol, disp, param, cutoff, energy, gradient, sigma)
 
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp2, lattr)
    call param%get_dispersion2(mol, lattr, cutoff%disp2, disp%r4r2, &
-      & c6, dc6dcn, dc6dq, energies, dEdcn, dEdq, gradient, sigma)
+      & c6, dc6dcn, dc6dq, energies, dEdcn, dEdq, gradient, sigma, disp%damping_type)
    if (grad) then
       call d4_gemv(dqdr, dEdq, gradient, beta=1.0_wp)
       call d4_gemv(dqdL, dEdq, sigma, beta=1.0_wp)
@@ -123,7 +123,7 @@ subroutine get_dispersion(mol, disp, param, cutoff, energy, gradient, sigma)
 
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp3, lattr)
    call param%get_dispersion3(mol, lattr, cutoff%disp3, disp%r4r2, &
-      & c6, dc6dcn, dc6dq, energies, dEdcn, dEdq, gradient, sigma)
+      & c6, dc6dcn, dc6dq, energies, dEdcn, dEdq, gradient, sigma, disp%damping_type)
    if (grad) then
       call add_coordination_number_derivs(mol, lattr, cutoff%cn, &
          & disp%rcov, disp%en, dEdcn, gradient, sigma)

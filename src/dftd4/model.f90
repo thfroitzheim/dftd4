@@ -37,7 +37,7 @@ contains
 !> Wrapper for creating a new dispersion model (D4 or D4S) from molecular 
 !> structure input using a given model string. Defaults to D4 if no model
 !> is specified.
-subroutine new_dispersion_model(error, d4, mol, model, ga, gc, wf, qmod)
+subroutine new_dispersion_model(error, d4, mol, model, ga, gc, wf, qmod, damping_type)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -63,6 +63,9 @@ subroutine new_dispersion_model(error, d4, mol, model, ga, gc, wf, qmod)
    !> Charge model selection
    integer, intent(in), optional :: qmod
 
+   !> Damping type selection
+   integer, intent(in), optional :: damping_type
+
    character(len=:), allocatable :: mdl
 
    if (present(model)) then
@@ -75,14 +78,14 @@ subroutine new_dispersion_model(error, d4, mol, model, ga, gc, wf, qmod)
       block 
          type(d4_model), allocatable :: tmp
          allocate(tmp)
-         call new_d4_model(error, tmp, mol, ga=ga, gc=gc, wf=wf, qmod=qmod)
+         call new_d4_model(error, tmp, mol, ga=ga, gc=gc, wf=wf, qmod=qmod, damping_type=damping_type)
          call move_alloc(tmp, d4)
       end block 
    else if(mdl == "d4s") then
       block 
          type(d4s_model), allocatable :: tmp
          allocate(tmp)
-         call new_d4s_model(error, tmp, mol, ga=ga, gc=gc, qmod=qmod)
+         call new_d4s_model(error, tmp, mol, ga=ga, gc=gc, qmod=qmod, damping_type=damping_type)
          call move_alloc(tmp, d4)
       end block
    else

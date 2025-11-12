@@ -307,6 +307,7 @@ subroutine ascii_damping_param(unit, param, method)
          & "s9", param%s9, &
          & "a1", param%a1, &
          & "a2", param%a2, &
+         & "a3", param%a3, &
          & "alp", param%alp
       write(unit, '(20("-"))')
       write(unit, '(a)')

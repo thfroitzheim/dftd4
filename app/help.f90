@@ -33,7 +33,7 @@ module dftd4_help
       "-i,--input <format>      Hint for the format of the input file"//nl//&
       "-f,--func <method>       Use damping parameters for given functional"//nl//&
       "   --param <list>        Specify parameters for rational damping,"//nl//&
-      "                         expected order is s6, s8, a1, a2 (requires four arguments)"//nl//&
+      "                         expected order is s6, s8, a1, a2, a3 (requires five arguments)"//nl//&
       "   --mbdscale <s9>       Use scaled ATM three-body dispersion"//nl//&
       "   --zeta <list>         Adjust charge scaling parameters, takes two reals,"//nl//&
       "                         expected order is ga, gc (default: 3.0, 2.0)"//nl//&
@@ -41,6 +41,7 @@ module dftd4_help
       "                         (default: 6.0)"//nl//&
       "-m,--model <model>       Use specific D4 model (options: D4 (default), D4S)"//nl//&
       "   --qmodel              Use specific charge model (options: EEQ (default), EEQBC)"//nl//&
+      "   --damp_type <int>     Use specific damping type (options: 0 (default), 1, 2)"//nl//&
       "-g,--grad [file]         Evaluate molecular gradient and virial,"//nl//&
       "                         write results to file (default: dftd4.txt),"//nl//&
       "                         attempts to add to Turbomole gradient and gradlatt files"//nl//&

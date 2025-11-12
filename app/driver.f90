@@ -181,7 +181,7 @@ subroutine run_main(config, error)
 
    ! Initialize D4/D4S model
    call new_dispersion_model(error, d4, mol, config%model, ga=ga, &
-      & gc=gc, wf=config%wf, qmod=charge_model)
+      & gc=gc, wf=config%wf, qmod=charge_model, damping_type=config%damping_type)
 
    if (allocated(error)) return
 

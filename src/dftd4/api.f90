@@ -511,7 +511,7 @@ function new_rational_damping_api(verror, s6, s8, s9, a1, a2, alp) &
    call c_f_pointer(verror, error)
 
    allocate(tmp)
-   tmp = rational_damping_param(s6=s6, s8=s8, s9=s9, a1=a1, a2=a2, alp=alp)
+   tmp = rational_damping_param(s6=s6, s8=s8, s9=s9, a1=a1, a2=a2, a3=0.0_wp, alp=alp)
 
    allocate(param)
    call move_alloc(tmp, param%ptr)

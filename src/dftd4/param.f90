@@ -343,7 +343,7 @@ contains
 
       par = rational_damping_param(&
          & s6=s6_, &
-         & s8=s8, a1=a1, a2=a2, &
+         & s8=s8, a1=a1, a2=a2, a3=0.0_wp, &
          & s9=s9_, &
          & alp=alp_)
    end function dftd_param
@@ -813,7 +813,7 @@ contains
 
       par = rational_damping_param(&
          & s6=s6_, &
-         & s8=s8, a1=a1, a2=a2, &
+         & s8=s8, a1=a1, a2=a2, a3=0.0_wp, &
          & s9=s9_, &
          & alp=alp_)
    end function dftd_param
