@@ -18,6 +18,7 @@
 module dftd4_disp
    use, intrinsic :: iso_fortran_env, only : error_unit
    use dftd4_blas, only : d4_gemv
+   use dftd4_cache, only : dispersion_cache
    use dftd4_cutoff, only : realspace_cutoff, get_lattice_points
    use dftd4_damping, only : damping_param
    use dftd4_data, only : get_covalent_rad
@@ -65,10 +66,9 @@ subroutine get_dispersion(mol, disp, param, cutoff, energy, gradient, sigma)
    integer :: mref
    real(wp), allocatable :: cn(:)
    real(wp), allocatable :: q(:), dqdr(:, :, :), dqdL(:, :, :)
-   real(wp), allocatable :: gwvec(:, :, :), gwdcn(:, :, :), gwdq(:, :, :)
-   real(wp), allocatable :: c6(:, :), dc6dcn(:, :), dc6dq(:, :)
    real(wp), allocatable :: dEdcn(:), dEdq(:), energies(:)
    real(wp), allocatable :: lattr(:, :)
+   type(dispersion_cache) :: cache
    type(error_type), allocatable :: error
 
    mref = maxval(disp%ref)
@@ -91,13 +91,7 @@ subroutine get_dispersion(mol, disp, param, cutoff, energy, gradient, sigma)
       error stop
    end if
 
-   allocate(gwvec(mref, mol%nat, disp%ncoup))
-   if (grad) allocate(gwdcn(mref, mol%nat, disp%ncoup), gwdq(mref, mol%nat, disp%ncoup))
-   call disp%weight_references(mol, cn, q, gwvec, gwdcn, gwdq)
-
-   allocate(c6(mol%nat, mol%nat))
-   if (grad) allocate(dc6dcn(mol%nat, mol%nat), dc6dq(mol%nat, mol%nat))
-   call disp%get_atomic_c6(mol, gwvec, gwdcn, gwdq, c6, dc6dcn, dc6dq)
+   call disp%update(mol, cache, cn, q, grad=grad)
 
    allocate(energies(mol%nat))
    energies(:) = 0.0_wp
@@ -111,19 +105,18 @@ subroutine get_dispersion(mol, disp, param, cutoff, energy, gradient, sigma)
 
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp2, lattr)
    call param%get_dispersion2(mol, lattr, cutoff%disp2, disp%r4r2, &
-      & c6, dc6dcn, dc6dq, energies, dEdcn, dEdq, gradient, sigma)
+      & cache%c6, cache%dc6dcn, cache%dc6dq, energies, dEdcn, dEdq, gradient, sigma)
    if (grad) then
       call d4_gemv(dqdr, dEdq, gradient, beta=1.0_wp)
       call d4_gemv(dqdL, dEdq, sigma, beta=1.0_wp)
    end if
 
    q(:) = 0.0_wp
-   call disp%weight_references(mol, cn, q, gwvec, gwdcn, gwdq)
-   call disp%get_atomic_c6(mol, gwvec, gwdcn, gwdq, c6, dc6dcn, dc6dq)
+   call disp%update(mol, cache, cn, q, grad=grad)
 
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp3, lattr)
    call param%get_dispersion3(mol, lattr, cutoff%disp3, disp%r4r2, &
-      & c6, dc6dcn, dc6dq, energies, dEdcn, dEdq, gradient, sigma)
+      & cache%c6, cache%dc6dcn, cache%dc6dq, energies, dEdcn, dEdq, gradient, sigma)
    if (grad) then
       call add_coordination_number_derivs(mol, lattr, cutoff%cn, &
          & disp%rcov, disp%en, dEdcn, gradient, sigma)
@@ -135,7 +128,7 @@ end subroutine get_dispersion
 
 
 !> Wrapper to handle the evaluation of properties related to this dispersion model
-subroutine get_properties(mol, disp, cutoff, cn, q, c6, alpha)
+subroutine get_properties(mol, disp, cutoff, cn, q, c6, alpha, alphaqq)
    !DEC$ ATTRIBUTES DLLEXPORT :: get_properties
 
    !> Molecular structure data
@@ -156,11 +149,15 @@ subroutine get_properties(mol, disp, cutoff, cn, q, c6, alpha)
    !> C6 coefficients
    real(wp), intent(out) :: c6(:, :)
 
-   !> Static polarizabilities
+   !> Static dipole-dipole polarizabilities
    real(wp), intent(out) :: alpha(:)
 
+   !> Static quadrupole-quadrupole polarizabilities
+   real(wp), intent(out) :: alphaqq(:)
+
    integer :: mref
-   real(wp), allocatable :: gwvec(:, :, :), lattr(:, :)
+   real(wp), allocatable :: lattr(:, :)
+   type(dispersion_cache) :: cache
    type(error_type), allocatable :: error
 
    if (.not. allocated(disp%mchrg)) then
@@ -179,11 +176,10 @@ subroutine get_properties(mol, disp, cutoff, cn, q, c6, alpha)
       error stop
    end if
 
-   allocate(gwvec(mref, mol%nat, disp%ncoup))
-   call disp%weight_references(mol, cn, q, gwvec)
+   call disp%update(mol, cache, cn, q, grad=.false.)
+   c6(:, :) = cache%c6
 
-   call disp%get_atomic_c6(mol, gwvec, c6=c6)
-   call disp%get_polarizabilities(mol, gwvec, alpha=alpha)
+   call disp%get_polarizabilities(cache, alpha, alphaqq)
 
 end subroutine get_properties
 
@@ -211,7 +207,8 @@ subroutine get_pairwise_dispersion(mol, disp, param, cutoff, energy2, energy3)
    real(wp), intent(out) :: energy3(:, :)
 
    integer :: mref
-   real(wp), allocatable :: cn(:), q(:), gwvec(:, :, :), c6(:, :), lattr(:, :)
+   real(wp), allocatable :: cn(:), q(:), lattr(:, :)
+   type(dispersion_cache) :: cache
    type(error_type), allocatable :: error
 
    if (.not. allocated(disp%mchrg)) then
@@ -232,25 +229,20 @@ subroutine get_pairwise_dispersion(mol, disp, param, cutoff, energy2, energy3)
       error stop
    end if
 
-   allocate(gwvec(mref, mol%nat, disp%ncoup))
-   call disp%weight_references(mol, cn, q, gwvec)
-
-   allocate(c6(mol%nat, mol%nat))
-   call disp%get_atomic_c6(mol, gwvec, c6=c6)
+   call disp%update(mol, cache, cn, q, grad=.false.)
 
    energy2(:, :) = 0.0_wp
    energy3(:, :) = 0.0_wp
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp2, lattr)
    call param%get_pairwise_dispersion2(mol, lattr, cutoff%disp2, disp%r4r2, &
-      & c6, energy2)
+      & cache%c6, energy2)
 
    q(:) = 0.0_wp
-   call disp%weight_references(mol, cn, q, gwvec)
-   call disp%get_atomic_c6(mol, gwvec, c6=c6)
+   call disp%update(mol, cache, cn, q, grad=.false.)
 
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp3, lattr)
    call param%get_pairwise_dispersion3(mol, lattr, cutoff%disp3, disp%r4r2, &
-      & c6, energy3)
+      & cache%c6, energy3)
 
 end subroutine get_pairwise_dispersion
 

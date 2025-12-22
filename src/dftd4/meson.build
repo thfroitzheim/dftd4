@@ -20,6 +20,7 @@ subdir('model')
 
 srcs += files(
   'blas.F90',
+  'cache.f90',
   'cutoff.f90',
   'damping.f90',
   'data.f90',

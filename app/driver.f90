@@ -74,7 +74,7 @@ subroutine run_main(config, error)
    real(wp) :: charge
    real(wp), allocatable :: energy, gradient(:, :), sigma(:, :), hessian(:, :, :, :)
    real(wp), allocatable :: pair_disp2(:, :), pair_disp3(:, :)
-   real(wp), allocatable :: cn(:), q(:), c6(:, :), alpha(:)
+   real(wp), allocatable :: cn(:), q(:), c6(:, :), alpha(:), alphaqq(:)
    real(wp), allocatable :: s9
    real(wp) :: ga, gc
    integer :: stat, unit, is, id, charge_model
@@ -190,11 +190,12 @@ subroutine run_main(config, error)
          call ascii_atomic_radii(output_unit, mol, d4)
          call ascii_atomic_references(output_unit, mol, d4)
       end if
-      allocate(cn(mol%nat), q(mol%nat), c6(mol%nat, mol%nat), alpha(mol%nat))
-      call get_properties(mol, d4, realspace_cutoff(), cn, q, c6, alpha)
+      allocate(cn(mol%nat), q(mol%nat), c6(mol%nat, mol%nat), &
+         & alpha(mol%nat), alphaqq(mol%nat))
+      call get_properties(mol, d4, realspace_cutoff(), cn, q, c6, alpha, alphaqq)
 
       if (config%verbosity > 0) then
-         call ascii_system_properties(output_unit, mol, d4, cn, q, c6, alpha)
+         call ascii_system_properties(output_unit, mol, d4, cn, q, c6, alpha, alphaqq)
       end if
    end if
 

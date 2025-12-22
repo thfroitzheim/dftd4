@@ -775,7 +775,7 @@ end subroutine get_pairwise_dispersion_api
 
 !> Calculate dispersion
 subroutine get_properties_api(verror, vmol, vdisp, &
-      & c_cn, c_charges, c_c6, c_alpha) &
+      & c_cn, c_charges, c_c6, c_alpha, c_alphaqq) &
       & bind(C, name=namespace//"get_properties")
    !DEC$ ATTRIBUTES DLLEXPORT :: get_properties_api
    type(c_ptr), value :: verror
@@ -792,6 +792,8 @@ subroutine get_properties_api(verror, vmol, vdisp, &
    real(wp), allocatable :: c6(:, :)
    real(c_double), intent(out), optional :: c_alpha(*)
    real(wp), allocatable :: alpha(:)
+   real(c_double), intent(out), optional :: c_alphaqq(*)
+   real(wp), allocatable :: alphaqq(:)
 
    if (debug) print'("[Info]",1x, a)', "get_properties"
 
@@ -811,8 +813,9 @@ subroutine get_properties_api(verror, vmol, vdisp, &
    call c_f_pointer(vdisp, disp)
 
    allocate(cn(mol%ptr%nat), charges(mol%ptr%nat), alpha(mol%ptr%nat), &
-      & c6(mol%ptr%nat, mol%ptr%nat))
-   call get_properties(mol%ptr, disp%ptr, realspace_cutoff(), cn, charges, c6, alpha)
+      & alphaqq(mol%ptr%nat), c6(mol%ptr%nat, mol%ptr%nat))
+   call get_properties(mol%ptr, disp%ptr, realspace_cutoff(), cn, charges, &
+      & c6, alpha, alphaqq)
 
    if (present(c_cn)) then
       c_cn(:size(cn)) = cn
@@ -828,6 +831,10 @@ subroutine get_properties_api(verror, vmol, vdisp, &
 
    if (present(c_alpha)) then
       c_alpha(:size(alpha)) = alpha
+   end if
+
+   if (present(c_alphaqq)) then
+      c_alphaqq(:size(alphaqq)) = alphaqq
    end if
 
 end subroutine get_properties_api

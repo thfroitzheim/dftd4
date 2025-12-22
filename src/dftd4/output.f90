@@ -117,7 +117,7 @@ subroutine ascii_atomic_references(unit, mol, disp)
 end subroutine ascii_atomic_references
 
 
-subroutine ascii_system_properties(unit, mol, disp, cn, q, c6, alpha)
+subroutine ascii_system_properties(unit, mol, disp, cn, q, c6, alpha, alphaqq)
    !DEC$ ATTRIBUTES DLLEXPORT :: ascii_system_properties
 
    !> Unit for output
@@ -138,8 +138,11 @@ subroutine ascii_system_properties(unit, mol, disp, cn, q, c6, alpha)
    !> Atomic dispersion coefficients
    real(wp), intent(in) :: c6(:, :)
 
-   !> Atomic static polarizabilities
+   !> Atomic static dipole-dipole polarizabilities
    real(wp), intent(in) :: alpha(:)
+
+   !> Atomic static quadrupole-quadrupole polarizabilities
+   real(wp), intent(in) :: alphaqq(:)
 
    integer :: iat, isp, jat
    real(wp) :: sum_c8
@@ -147,21 +150,20 @@ subroutine ascii_system_properties(unit, mol, disp, cn, q, c6, alpha)
    sum_c8 = 0.0_wp
 
    write(unit, '(a,":")') "Atomic properties (in atomic units)"
-   write(unit, '(76("-"))')
-   write(unit, '(a6,1x,a4,5x, 2(1x,a10), 1x,a11, 1x,a13, 1x,a10)') &
-      "#", "Z", "CN", "q", "C6(AA)", "C8(AA)", "alpha(0)"
-   write(unit, '(76("-"))')
-
+   write(unit, '(87("-"))')
+   write(unit, '(a6,1x,a4,5x,*(1x,a10))') "#", "Z", "CN", "q", "C6(AA)", &
+      & "C8(AA)", "alpha(0)", "alphaQQ(0)"
+   write(unit, '(87("-"))')
    do iat = 1, mol%nat
       isp = mol%id(iat)
       write(unit, '(i6,1x,i4,1x,a4, 2(1x,f10.4), 1x,f11.4, 1x,f13.4, 1x,f10.4)') &
          & iat, mol%num(isp), mol%sym(isp), cn(iat), q(iat), c6(iat, iat), &
-         & c6(iat, iat)*3*disp%r4r2(isp)**2, alpha(iat)
+         & c6(iat, iat)*3*disp%r4r2(isp)**2, alpha(iat), alphaqq(iat)
       do jat = 1, mol%nat
          sum_c8 = sum_c8 + 3*c6(jat, iat)*disp%r4r2(mol%id(jat))*disp%r4r2(isp)
       end do
    end do
-   write(unit, '(76("-"))')
+   write(unit, '(87("-"))')
    write(unit, '(a)')
 
    write(unit, '(a,":")') "Molecular properties (in atomic units)"

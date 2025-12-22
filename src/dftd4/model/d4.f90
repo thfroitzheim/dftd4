@@ -19,6 +19,7 @@ module dftd4_model_d4
    use, intrinsic :: iso_fortran_env, only : output_unit, error_unit
    use ieee_arithmetic, only : ieee_is_nan
    use dftd4_model_type, only : dispersion_model, d4_qmod
+   use dftd4_cache, only : dispersion_cache
    use dftd4_data, only : get_covalent_rad, get_r4r2_val, get_effective_charge, &
       get_electronegativity, get_hardness
    use dftd4_reference
@@ -41,13 +42,10 @@ module dftd4_model_d4
 
    contains
 
-      !> Generate weights for all reference systems
-      procedure :: weight_references
+      !> Update cache with dispersion coefficients and properties
+      procedure :: update
 
-      !> Evaluate C6 coefficient
-      procedure :: get_atomic_c6
-
-      !> Evaluate atomic polarizabilities
+      !> Evaluate atomic polarizabilities from cache
       procedure :: get_polarizabilities
 
    end type d4_model
@@ -104,6 +102,7 @@ subroutine new_d4_model(error, d4, mol, ga, gc, wf, qmod)
    end do
 
    d4%ncoup = 1
+   d4%ngrid = 23
 
    if (present(ga)) then
       d4%ga = ga
@@ -229,16 +228,98 @@ subroutine new_d4_model(error, d4, mol, ga, gc, wf, qmod)
 end subroutine new_d4_model
 
 
-!> Calculate the weights of the reference system and the derivatives w.r.t.
-!> coordination number for later use.
-subroutine weight_references(self, mol, cn, q, gwvec, gwdcn, gwdq)
-   !DEC$ ATTRIBUTES DLLEXPORT :: weight_references
+!> Update dispersion cache with precomputed coefficients and properties
+subroutine update(self, mol, cache, cn, q, grad, only_c6)
+   !DEC$ ATTRIBUTES DLLEXPORT :: update
 
    !> Instance of the dispersion model
    class(d4_model), intent(in) :: self
 
    !> Molecular structure data
    class(structure_type), intent(in) :: mol
+
+   !> Dispersion cache to populate
+   type(dispersion_cache), intent(inout) :: cache
+
+   !> Coordination number of every atom
+   real(wp), intent(in) :: cn(:)
+
+   !> Partial charge of every atom
+   real(wp), intent(in) :: q(:)
+
+   !> Whether to compute derivatives
+   logical, intent(in), optional :: grad
+
+   !> Whether to compute only C6 coefficients
+   logical, intent(in), optional :: only_c6
+
+   logical :: do_grad, c6_only
+   integer :: mref
+   real(wp), allocatable :: gwvec(:, :, :), gwdcn(:, :, :), &
+      & gwdq(:, :, :)
+
+   mref = maxval(self%ref)
+   do_grad = .false.
+   if (present(grad)) do_grad = grad
+   c6_only = .false.
+   if (present(only_c6)) c6_only = only_c6
+
+   if (.not. c6_only) then
+      if (.not. allocated(cache%adiw)) allocate(cache%adiw(self%ngrid, mol%nat))
+      if (.not. allocated(cache%aqiw)) allocate(cache%aqiw(self%ngrid, mol%nat))
+      if (do_grad) then
+         if (.not. allocated(cache%dadiwdcn)) &
+            & allocate(cache%dadiwdcn(self%ngrid, mol%nat))
+         if (.not. allocated(cache%dadiwdq)) &
+            & allocate(cache%dadiwdq(self%ngrid, mol%nat))
+         if (.not. allocated(cache%daqiwdcn)) &
+            & allocate(cache%daqiwdcn(self%ngrid, mol%nat))
+         if (.not. allocated(cache%daqiwdq)) &
+            & allocate(cache%daqiwdq(self%ngrid, mol%nat))
+      end if
+   end if
+
+   if (.not. allocated(cache%c6)) allocate(cache%c6(mol%nat, mol%nat))
+   if (do_grad) then
+      if (.not. allocated(cache%dc6dcn)) allocate(cache%dc6dcn(mol%nat, mol%nat))
+      if (.not. allocated(cache%dc6dq)) allocate(cache%dc6dq(mol%nat, mol%nat))
+   end if
+
+   allocate(gwvec(mref, mol%nat, self%ncoup))
+   if (do_grad) then
+      allocate(gwdcn(mref, mol%nat, self%ncoup), gwdq(mref, mol%nat, self%ncoup))
+      call weight_references(self, mol, cn, q, gwvec, gwdcn, gwdq)
+   else
+      call weight_references(self, mol, cn, q, gwvec)
+   end if
+
+   if (.not. c6_only) then
+      if (do_grad) then
+         call get_atomic_pol(self, mol, gwvec, gwdcn, gwdq, cache%adiw, cache%aqiw, &
+            & cache%dadiwdcn, cache%dadiwdq, cache%daqiwdcn, cache%daqiwdq)
+      else
+         call get_atomic_pol(self, mol, gwvec, adiw=cache%adiw, aqiw=cache%aqiw)
+      end if
+   end if
+
+   if (do_grad) then
+      call get_atomic_c6(self, mol, gwvec, gwdcn, gwdq, &
+         & cache%c6, cache%dc6dcn, cache%dc6dq)
+   else
+      call get_atomic_c6(self, mol, gwvec, c6=cache%c6)
+   end if
+
+end subroutine update
+
+
+!> Calculate the weights of the reference system and the derivatives w.r.t. coordination number
+subroutine weight_references(self, mol, cn, q, gwvec, gwdcn, gwdq)
+
+   !> Instance of the dispersion model
+   type(d4_model), intent(in) :: self
+
+   !> Molecular structure data
+   type(structure_type), intent(in) :: mol
 
    !> Coordination number of every atom
    real(wp), intent(in) :: cn(:)
@@ -297,7 +378,7 @@ subroutine weight_references(self, mol, cn, q, gwvec, gwdcn, gwdq)
                expw = expw + gw
                expd = expd + 2*wf * (self%cn(iref, izp) - cn(iat)) * gw
             end do
-            
+
             gwk = expw * norm
             if (is_exceptional(gwk) .or. norm == 0.0_wp) then
                maxcn = maxval(self%cn(:self%ref(izp), izp))
@@ -377,13 +458,12 @@ end subroutine weight_references
 !> Calculate atomic dispersion coefficients and their derivatives w.r.t.
 !> the coordination numbers and atomic partial charges.
 subroutine get_atomic_c6(self, mol, gwvec, gwdcn, gwdq, c6, dc6dcn, dc6dq)
-   !DEC$ ATTRIBUTES DLLEXPORT :: get_atomic_c6
 
    !> Instance of the dispersion model
-   class(d4_model), intent(in) :: self
+   type(d4_model), intent(in) :: self
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    !> Weighting function for the atomic reference systems
    real(wp), intent(in) :: gwvec(:, :, :)
@@ -471,16 +551,15 @@ subroutine get_atomic_c6(self, mol, gwvec, gwdcn, gwdq, c6, dc6dcn, dc6dq)
 end subroutine get_atomic_c6
 
 
-!> Calculate atomic polarizabilities and their derivatives w.r.t.
-!> the coordination numbers and atomic partial charges.
-subroutine get_polarizabilities(self, mol, gwvec, gwdcn, gwdq, alpha, dadcn, dadq)
-   !DEC$ ATTRIBUTES DLLEXPORT :: get_polarizabilities
+!> Compute atomic polarizabilities from weighted references
+subroutine get_atomic_pol(self, mol, gwvec, gwdcn, gwdq, adiw, aqiw, &
+      & dadiwdcn, dadiwdq, daqiwdcn, daqiwdq)
 
    !> Instance of the dispersion model
-   class(d4_model), intent(in) :: self
+   type(d4_model), intent(in) :: self
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    !> Weighting function for the atomic reference systems
    real(wp), intent(in) :: gwvec(:, :, :)
@@ -491,56 +570,131 @@ subroutine get_polarizabilities(self, mol, gwvec, gwdcn, gwdq, alpha, dadcn, dad
    !> Derivative of the weighting function w.r.t. the partial charge
    real(wp), intent(in), optional :: gwdq(:, :, :)
 
-   !> Static polarizabilities for all atoms.
-   real(wp), intent(out) :: alpha(:)
+   !> Dipole-dipole dynamic polarizabilities
+   real(wp), intent(out), optional :: adiw(:, :)
 
-   !> Derivative of the polarizibility w.r.t. the coordination number
-   real(wp), intent(out), optional :: dadcn(:)
+   !> Quadrupole-quadrupole dynamic polarizabilities
+   real(wp), intent(out), optional :: aqiw(:, :)
 
-   !> Derivative of the polarizibility w.r.t. the partial charge
-   real(wp), intent(out), optional :: dadq(:)
+   !> Derivative of DD polarizabilities w.r.t. coordination number
+   real(wp), intent(out), optional :: dadiwdcn(:, :)
+
+   !> Derivative of DD polarizabilities w.r.t. partial charge
+   real(wp), intent(out), optional :: dadiwdq(:, :)
+
+   !> Derivative of QQ polarizabilities w.r.t. coordination number
+   real(wp), intent(out), optional :: daqiwdcn(:, :)
+
+   !> Derivative of QQ polarizabilities w.r.t. partial charge
+   real(wp), intent(out), optional :: daqiwdq(:, :)
 
    integer :: iat, izp, iref
-   real(wp) :: refa, da, dadcni, dadqi
 
-   if (present(gwdcn).and.present(dadcn) &
-      & .and.present(gwdq).and.present(dadq)) then
-      alpha(:) = 0.0_wp
-      dadcn(:) = 0.0_wp
-      dadq(:) = 0.0_wp
+   if (present(gwdcn).and.present(dadiwdcn).and.present(daqiwdcn) &
+      & .and.present(gwdq).and.present(dadiwdq).and.present(daqiwdq)) then
+      adiw(:, :) = 0.0_wp
+      aqiw(:, :) = 0.0_wp
+      dadiwdcn(:, :) = 0.0_wp
+      dadiwdq(:, :) = 0.0_wp
+      daqiwdcn(:, :) = 0.0_wp
+      daqiwdq(:, :) = 0.0_wp
 
       !$omp parallel do default(none) schedule(runtime) &
-      !$omp shared(alpha, dadcn, dadq, mol, self, gwvec, gwdcn, gwdq) &
-      !$omp private(iat, izp, iref, refa, da, dadqi, dadcni)
+      !$omp shared(mol, self, adiw, aqiw, gwvec, gwdcn, gwdq) &
+      !$omp shared(dadiwdcn, dadiwdq, daqiwdcn, daqiwdq) &
+      !$omp private(iat, izp, iref)
       do iat = 1, mol%nat
          izp = mol%id(iat)
-         da = 0.0_wp
-         dadcni = 0.0_wp
-         dadqi = 0.0_wp
          do iref = 1, self%ref(izp)
-            refa = self%aiw(1, iref, izp)
-            da = da + gwvec(iref, iat, 1) * refa
-            dadcni = dadcni + gwdcn(iref, iat, 1) * refa
-            dadqi = dadqi + gwdq(iref, iat, 1) * refa
+            adiw(:, iat) = adiw(:, iat) + gwvec(iref, iat, 1) * self%aiw(:, iref, izp)
+            dadiwdcn(:, iat) = dadiwdcn(:, iat) + gwdcn(iref, iat, 1) * self%aiw(:, iref, izp)
+            dadiwdq(:, iat) = dadiwdq(:, iat) + gwdq(iref, iat, 1) * self%aiw(:, iref, izp)
          end do
-         alpha(iat) = da
-         dadcn(iat) = dadcni
-         dadq(iat) = dadqi
+         aqiw(:, iat) = adiw(:, iat) * self%r4r2(izp)
+         daqiwdcn(:, iat) = dadiwdcn(:, iat) * self%r4r2(izp)
+         daqiwdq(:, iat) = dadiwdq(:, iat) * self%r4r2(izp)
       end do
-
    else
 
-      alpha(:) = 0.0_wp
+      adiw(:, :) = 0.0_wp
+      aqiw(:, :) = 0.0_wp
 
       !$omp parallel do default(none) schedule(runtime) &
-      !$omp shared(alpha, mol, self, gwvec) private(iat, izp, iref, refa, da)
+      !$omp shared(adiw, aqiw, mol, self, gwvec) &
+      !$omp private(iat, izp, iref)
+
       do iat = 1, mol%nat
          izp = mol%id(iat)
-         da = 0.0_wp
          do iref = 1, self%ref(izp)
-            da = da + gwvec(iref, iat, 1) * self%aiw(1, iref, izp)
+            adiw(:, iat) = adiw(:, iat) + gwvec(iref, iat, 1) * self%aiw(:, iref, izp)
          end do
-         alpha(iat) = da
+         aqiw(:, iat) = adiw(:, iat) * self%r4r2(izp)
+      end do
+   end if
+
+end subroutine get_atomic_pol
+
+
+!> Extract static polarizabilities from cache
+subroutine get_polarizabilities(self, cache, alpha, alphaqq, &
+   & dadcn, dadq, daqqdcn, daqqdq)
+   !DEC$ ATTRIBUTES DLLEXPORT :: get_polarizabilities
+
+   !> Instance of the dispersion model
+   class(d4_model), intent(in) :: self
+
+   !> Dispersion cache containing polarizabilities
+   type(dispersion_cache), intent(in) :: cache
+
+   !> Static dipole-dipole polarizabilities for all atoms
+   real(wp), intent(out) :: alpha(:)
+
+   !> Static quadrupole-quadrupole polarizabilities for all atoms
+   real(wp), intent(out) :: alphaqq(:)
+
+   !> Derivative of dipole polarizibility w.r.t. coordination number
+   real(wp), intent(out), optional :: dadcn(:)
+
+   !> Derivative of dipole polarizibility w.r.t. partial charge
+   real(wp), intent(out), optional :: dadq(:)
+
+   !> Derivative of quadrupole polarizibility w.r.t. coordination number
+   real(wp), intent(out), optional :: daqqdcn(:)
+
+   !> Derivative of quadrupole polarizibility w.r.t. partial charge
+   real(wp), intent(out), optional :: daqqdq(:)
+
+   integer :: iat
+
+   do iat = 1, size(alpha)
+      alpha(iat) = cache%adiw(1, iat)
+   end do
+
+   do iat = 1, size(alphaqq)
+      alphaqq(iat) = cache%aqiw(1, iat)
+   end do
+
+   if (present(dadcn)) then
+      do iat = 1, size(dadcn)
+         dadcn(iat) = cache%dadiwdcn(1, iat)
+      end do
+   end if
+
+   if (present(dadq)) then
+      do iat = 1, size(dadq)
+         dadq(iat) = cache%dadiwdq(1, iat)
+      end do
+   end if
+
+   if (present(daqqdcn)) then
+      do iat = 1, size(daqqdcn)
+         daqqdcn(iat) = cache%daqiwdcn(1, iat)
+      end do
+   end if
+
+   if (present(daqqdq)) then
+      do iat = 1, size(daqqdq)
+         daqqdq(iat) = cache%daqiwdq(1, iat)
       end do
    end if
 

@@ -121,7 +121,7 @@ int test_example(void)
     }
 
     // C6 coefficients
-    dftd4_get_properties(error, mol, disp, NULL, NULL, c6, NULL);
+    dftd4_get_properties(error, mol, disp, NULL, NULL, c6, NULL, NULL);
     if (dftd4_check_error(error)) {
         goto err;
     }

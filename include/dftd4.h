@@ -181,7 +181,8 @@ dftd4_get_properties(dftd4_error /* error */,
                      double* /* cn[n] */,
                      double* /* charges[n] */,
                      double* /* c6[n*n] */,
-                     double* /* alpha[n] */) DFTD4_API_SUFFIX__V_3_1;
+                     double* /* alpha[n] */,
+                     double* /* alphaqq[n] */) DFTD4_API_SUFFIX__V_3_1;
 
 /// Evaluate the dispersion energy and its derivative
 DFTD4_API_ENTRY void DFTD4_API_CALL

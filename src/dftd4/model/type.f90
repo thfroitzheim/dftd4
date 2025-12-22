@@ -19,6 +19,7 @@ module dftd4_model_type
    use mctc_env, only : wp
    use mctc_io, only : structure_type
    use multicharge, only : mchrg_model_type
+   use dftd4_cache, only : dispersion_cache
    implicit none
    private
 
@@ -30,6 +31,9 @@ module dftd4_model_type
 
       !> Number of atoms coupled to by pairwise parameters
       integer :: ncoup
+
+      !> Number of frequency grid points for dynamic polarizabilities
+      integer :: ngrid
 
       !> Charge scaling height
       real(wp) :: ga
@@ -75,82 +79,56 @@ module dftd4_model_type
 
    contains
 
-      !> Generate weights for all reference systems
-      procedure(weight_references), deferred :: weight_references
+      !> Update cache with dispersion coefficients and properties
+      procedure(update), deferred :: update
 
-      !> Evaluate C6 coefficient
-      procedure(get_atomic_c6), deferred :: get_atomic_c6
-
-      !> Evaluate atomic polarizabilities
+      !> Evaluate atomic polarizabilities from cache
       procedure(get_polarizabilities), deferred :: get_polarizabilities
 
    end type dispersion_model
 
    abstract interface
 
-      !> Calculate the weights of the reference system and the derivatives w.r.t.
-      !> coordination number for later use.
-      subroutine weight_references(self, mol, cn, q, gwvec, gwdcn, gwdq)
-         import dispersion_model, structure_type, wp
+      !> Update dispersion cache with precomputed coefficients and properties
+      subroutine update(self, mol, cache, cn, q, grad, only_c6)
+         import dispersion_model, dispersion_cache, structure_type, wp
          !> Instance of the dispersion model
          class(dispersion_model), intent(in) :: self
          !> Molecular structure data
          class(structure_type), intent(in) :: mol
-         !> Coordination number of every atom: [nat]
+         !> Dispersion cache to populate
+         type(dispersion_cache), intent(inout) :: cache
+         !> Coordination number of every atom
          real(wp), intent(in) :: cn(:)
-         !> Partial charge of every atom: [nat]
+         !> Partial charge of every atom
          real(wp), intent(in) :: q(:)
-         !> weighting for the atomic reference systems: [nref, nat, ncoup]
-         real(wp), intent(out) :: gwvec(:, :, :)
-         !> derivative of the weighting function w.r.t. the coordination number: [nref, nat, ncoup]
-         real(wp), intent(out), optional :: gwdcn(:, :, :)
-         !> derivative of the weighting function w.r.t. the charge scaling: [nref, nat, ncoup]
-         real(wp), intent(out), optional :: gwdq(:, :, :)
-      end subroutine 
+         !> Whether to compute derivatives
+         logical, intent(in), optional :: grad
+         !> Whether to compute only C6 coefficients
+         logical, intent(in), optional :: only_c6
+      end subroutine update
 
-      !> Calculate atomic dispersion coefficients and their derivatives w.r.t.
-      !> the coordination numbers and atomic partial charges.
-      subroutine get_atomic_c6(self, mol, gwvec, gwdcn, gwdq, c6, dc6dcn, dc6dq)
-         import dispersion_model, structure_type, wp
+      !> Calculate atomic polarizabilities from cache
+      subroutine get_polarizabilities(self, cache, alpha, alphaqq, &
+         & dadcn, dadq, daqqdcn, daqqdq)
+         import dispersion_model, dispersion_cache, wp
          !> Instance of the dispersion model
          class(dispersion_model), intent(in) :: self
-         !> Molecular structure data
-         class(structure_type), intent(in) :: mol
-         !> Weighting function for the atomic reference systems
-         real(wp), intent(in) :: gwvec(:, :, :)
-         !> Derivative of the weighting function w.r.t. the coordination number
-         real(wp), intent(in), optional :: gwdcn(:, :, :)
-         !> Derivative of the weighting function w.r.t. the partial charge
-         real(wp), intent(in), optional :: gwdq(:, :, :)
-         !> C6 coefficients for all atom pairs.
-         real(wp), intent(out) :: c6(:, :)
-         !> Derivative of the C6 w.r.t. the coordination number
-         real(wp), intent(out), optional :: dc6dcn(:, :)
-         !> Derivative of the C6 w.r.t. the partial charge
-         real(wp), intent(out), optional :: dc6dq(:, :)
-      end subroutine get_atomic_c6
-
-      !> Calculate atomic polarizabilities and their derivatives w.r.t.
-      !> the coordination numbers and atomic partial charges.
-      subroutine get_polarizabilities(self, mol, gwvec, gwdcn, gwdq, alpha, dadcn, dadq)
-         import dispersion_model, structure_type, wp
-         !> Instance of the dispersion model
-         class(dispersion_model), intent(in) :: self
-         !> Molecular structure data
-         class(structure_type), intent(in) :: mol
-         !> Weighting function for the atomic reference systems
-         real(wp), intent(in) :: gwvec(:, :, :)
-         !> Derivative of the weighting function w.r.t. the coordination number
-         real(wp), intent(in), optional :: gwdcn(:, :, :)
-         !> Derivative of the weighting function w.r.t. the partial charge
-         real(wp), intent(in), optional :: gwdq(:, :, :)
-         !> Static polarizabilities for all atoms.
+         !> Dispersion cache containing polarizabilities
+         type(dispersion_cache), intent(in) :: cache
+         !> Static dipole-dipole polarizabilities for all atoms
          real(wp), intent(out) :: alpha(:)
-         !> Derivative of the polarizibility w.r.t. the coordination number
+         !> Static quadrupole-quadrupole polarizabilities for all atoms
+         real(wp), intent(out) :: alphaqq(:)
+         !> Derivative of dipole polarizibility w.r.t. coordination number
          real(wp), intent(out), optional :: dadcn(:)
-         !> Derivative of the polarizibility w.r.t. the partial charge
+         !> Derivative of dipole polarizibility w.r.t. partial charge
          real(wp), intent(out), optional :: dadq(:)
-      end subroutine
+         !> Derivative of quadrupole polarizibility w.r.t. coordination number
+         real(wp), intent(out), optional :: daqqdcn(:)
+         !> Derivative of quadrupole polarizibility w.r.t. partial charge
+         real(wp), intent(out), optional :: daqqdq(:)
+      end subroutine get_polarizabilities
 
    end interface
 

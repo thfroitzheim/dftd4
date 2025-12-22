@@ -15,6 +15,7 @@
 ! along with dftd4.  If not, see <https://www.gnu.org/licenses/>.
 
 module test_model
+   use dftd4_cache, only : dispersion_cache
    use dftd4_cutoff, only : get_lattice_points
    use dftd4_data, only : get_covalent_rad
    use dftd4_model, only : dispersion_model, new_dispersion_model, d4_qmod
@@ -46,21 +47,21 @@ subroutine collect_model(testsuite)
    type(unittest_type), allocatable, intent(out) :: testsuite(:)
 
    testsuite = [ &
-      & new_unittest("gw-D4-mb01", test_gw_d4_mb01), &
-      & new_unittest("gw-D4S-mb01", test_gw_d4s_mb01), &
-      & new_unittest("gw-D4-mb02", test_gw_d4_mb02), &
-      & new_unittest("gw-D4-EEQBC-mb02", test_gw_d4_eeqbc_mb02), &
-      & new_unittest("gw-D4-mb03", test_gw_d4_mb03), &
-      & new_unittest("dgw_D4-mb04", test_dgw_d4_mb04), &
-      & new_unittest("dgw_D4S-mb04", test_dgw_d4s_mb04), &
-      & new_unittest("dgw_D4-mb05", test_dgw_d4_mb05), &
-      & new_unittest("dgw_D4S-mb05", test_dgw_d4s_mb05), &
-      & new_unittest("dgw_D4S-EEQBC-mb05", test_dgw_d4s_eeqbc_mb05), &
-      & new_unittest("dgw_D4-mb06", test_dgw_d4_mb06), &
-      & new_unittest("dgw_D4S-mb06", test_dgw_d4s_mb06), &
-      & new_unittest("gw-D4-gfn2", test_gw_d4_mb07), &
-      & new_unittest("dgw-D4-gfn2", test_dgw_d4_mb08), &
-      & new_unittest("dgw-D4S-gfn2", test_dgw_d4s_mb08), &
+      & new_unittest("c6-D4-mb01", test_c6_d4_mb01), &
+      & new_unittest("c6-D4S-mb01", test_c6_d4s_mb01), &
+      & new_unittest("c6-D4-mb02", test_c6_d4_mb02), &
+      & new_unittest("c6-D4-EEQBC-mb02", test_c6_d4_eeqbc_mb02), &
+      & new_unittest("c6-D4-mb03", test_c6_d4_mb03), &
+      & new_unittest("dc6-D4-mb04", test_dc6_d4_mb04), &
+      & new_unittest("dc6-D4S-mb04", test_dc6_d4s_mb04), &
+      & new_unittest("dc6-D4-mb05", test_dc6_d4_mb05), &
+      & new_unittest("dc6-D4S-mb05", test_dc6_d4s_mb05), &
+      & new_unittest("dc6-D4S-EEQBC-mb05", test_dc6_d4s_eeqbc_mb05), &
+      & new_unittest("dc6-D4-mb06", test_dc6_d4_mb06), &
+      & new_unittest("dc6-D4S-mb06", test_dc6_d4s_mb06), &
+      & new_unittest("c6-D4-gfn2", test_c6_d4_mb07), &
+      & new_unittest("dc6-D4-gfn2", test_dc6_d4_mb08), &
+      & new_unittest("dc6-D4S-gfn2", test_dc6_d4s_mb08), &
       & new_unittest("pol-D4-mb09", test_pol_d4_mb09), &
       & new_unittest("pol-D4s-mb09", test_pol_d4s_mb09), &
       & new_unittest("dpol-D4-mb10", test_dpol_d4_mb10), &
@@ -74,7 +75,7 @@ subroutine collect_model(testsuite)
 end subroutine collect_model
 
 
-subroutine test_gw_gen(error, mol, d4, ref, with_cn, with_q, qat)
+subroutine test_c6_gen(error, mol, d4, ref_c6, with_cn, with_q, qat)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -85,8 +86,8 @@ subroutine test_gw_gen(error, mol, d4, ref, with_cn, with_q, qat)
    !> Dispersion model
    class(dispersion_model), intent(in) :: d4
 
-   !> Reference Gaussian weights
-   real(wp), intent(in) :: ref(:, :, :)
+   !> Reference C6 coefficients
+   real(wp), intent(in) :: ref_c6(:, :)
 
    !> Calculate coordination number
    logical, intent(in) :: with_cn
@@ -97,12 +98,13 @@ subroutine test_gw_gen(error, mol, d4, ref, with_cn, with_q, qat)
    !> Atomic charges
    real(wp), optional, intent(in) :: qat(:)
 
-   real(wp), allocatable :: cn(:), q(:), gwvec(:, :, :)
+   real(wp), allocatable :: cn(:), q(:)
+   type(dispersion_cache) :: cache
    real(wp), parameter :: cutoff = 30.0_wp
    real(wp), allocatable :: lattr(:, :)
    class(ncoord_type), allocatable :: ncoord
 
-   allocate(cn(mol%nat), q(mol%nat), gwvec(maxval(d4%ref), mol%nat, d4%ncoup))
+   allocate(cn(mol%nat), q(mol%nat))
    cn(:) = 0.0_wp
    q(:) = 0.0_wp
 
@@ -122,17 +124,17 @@ subroutine test_gw_gen(error, mol, d4, ref, with_cn, with_q, qat)
       end if
    end if
 
-   call d4%weight_references(mol, cn, q, gwvec)
-   if (any(abs(gwvec - ref) > thr2)) then
-      call test_failed(error, "Gaussian weights do not match")
-      where(abs(gwvec) < thr) gwvec = 0.0_wp
-      print'(3(es20.13,"_wp,"), " &")', gwvec
+   call d4%update(mol, cache, cn, q, grad=.false.)
+   if (any(abs(cache%c6 - ref_c6) > thr2)) then
+      call test_failed(error, "C6 coefficients do not match")
+      where(abs(cache%c6) < thr) cache%c6 = 0.0_wp
+      print'(3(es20.13,"_wp,"), " &")', cache%c6
    end if
 
-end subroutine test_gw_gen
+end subroutine test_c6_gen
 
 
-subroutine test_dgw_gen(error, mol, d4, with_cn, with_q, qat)
+subroutine test_dc6_gen(error, mol, d4, with_cn, with_q, qat)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -152,19 +154,19 @@ subroutine test_dgw_gen(error, mol, d4, with_cn, with_q, qat)
    !> Atomic charges
    real(wp), optional, intent(in) :: qat(:)
 
-   integer :: iat, mref, ncoup
-   real(wp), allocatable :: cn(:), q(:), gwvec(:, :, :), gwdcn(:, :, :), gwdq(:, :, :)
-   real(wp), allocatable :: gwr(:, :, :), gwl(:, :, :), numdcn(:, :, :), numdq(:, :, :)
+   integer :: iat, jat
+   real(wp), allocatable :: cn(:), q(:)
+   real(wp), allocatable :: c6(:, :), c6dcn(:, :), c6dq(:, :)
+   real(wp), allocatable :: c6r(:, :), c6l(:, :), numdcn(:, :), numdq(:, :)
+   type(dispersion_cache) :: cache
    real(wp), parameter :: cutoff = 30.0_wp, lattr(3, 1) = 0.0_wp
-   real(wp), parameter :: step = 1.0e-6_wp
+   real(wp), parameter :: step = 5.0e-6_wp
    class(ncoord_type), allocatable :: ncoord
 
-   mref = maxval(d4%ref)
-   ncoup = d4%ncoup
-   allocate(cn(mol%nat), q(mol%nat), gwvec(mref, mol%nat, ncoup), &
-      & gwdcn(mref, mol%nat, ncoup), gwdq(mref, mol%nat, ncoup), &
-      & gwr(mref, mol%nat, ncoup), gwl(mref, mol%nat, ncoup), &
-      & numdcn(mref, mol%nat, ncoup), numdq(mref, mol%nat, ncoup))
+   allocate(cn(mol%nat), q(mol%nat), c6(mol%nat, mol%nat), &
+      & c6dcn(mol%nat, mol%nat), c6dq(mol%nat, mol%nat), &
+      & c6r(mol%nat, mol%nat), c6l(mol%nat, mol%nat), &
+      & numdcn(mol%nat, mol%nat), numdq(mol%nat, mol%nat))
    cn(:) = 0.0_wp
    q(:) = 0.0_wp
 
@@ -183,66 +185,74 @@ subroutine test_dgw_gen(error, mol, d4, with_cn, with_q, qat)
       end if
    end if
 
+   numdcn(:, :) = 0.0_wp
    if (with_cn) then
       do iat = 1, mol%nat
          cn(iat) = cn(iat) + step
-         call d4%weight_references(mol, cn, q, gwr)
+         call d4%update(mol, cache, cn, q, grad=.false.)
+         c6r = cache%c6
          cn(iat) = cn(iat) - 2*step
-         call d4%weight_references(mol, cn, q, gwl)
+         call d4%update(mol, cache, cn, q, grad=.false.)
+         c6l = cache%c6
          cn(iat) = cn(iat) + step
-         gwdcn(:, :, :) = 0.5_wp*(gwr - gwl)/step
-         numdcn(:, iat, :) = gwdcn(:, iat, :)
-         gwdcn(:, iat, :) = 0.0_wp 
-         if (any(abs(gwdcn) > thr)) then
-            call test_failed(error, "Unexpected non-zero gradient element found")
-            exit
-         end if
+         do jat = 1, mol%nat
+            if (iat .ne. jat) then
+               numdcn(iat, jat) = numdcn(iat, jat) + 0.5_wp*(c6r(iat, jat) - c6l(iat, jat))/step
+            else
+               numdcn(iat, jat) = numdcn(iat, jat) + 0.25_wp*(c6r(iat, jat) - c6l(iat, jat))/step
+            end if
+         end do
       end do
-      if (allocated(error)) return
    end if
 
+   numdq(:, :) = 0.0_wp
    if (with_q) then
       do iat = 1, mol%nat
          q(iat) = q(iat) + step
-         call d4%weight_references(mol, cn, q, gwr)
+         call d4%update(mol, cache, cn, q, grad=.false.)
+         c6r = cache%c6
          q(iat) = q(iat) - 2*step
-         call d4%weight_references(mol, cn, q, gwl)
+         call d4%update(mol, cache, cn, q, grad=.false.)
+         c6l = cache%c6
          q(iat) = q(iat) + step
-         gwdq(:, :, :) = 0.5_wp*(gwr - gwl)/step
-         numdq(:, iat, :) = gwdq(:, iat, :)
-         gwdq(:, iat, :) = 0.0_wp
-         if (any(abs(gwdq) > thr)) then
-            call test_failed(error, "Unexpected non-zero gradient element found")
-            exit
-         end if
+         do jat = 1, mol%nat
+            if (iat .ne. jat) then
+               numdq(iat, jat) = numdq(iat, jat) + 0.5_wp*(c6r(iat, jat) - c6l(iat, jat))/step
+            else
+               numdq(iat, jat) = numdq(iat, jat) + 0.25_wp*(c6r(iat, jat) - c6l(iat, jat))/step
+            end if
+         end do
       end do
-      if (allocated(error)) return
    end if
 
-   call d4%weight_references(mol, cn, q, gwvec, gwdcn, gwdq)
+   call d4%update(mol, cache, cn, q, grad=.true.)
+   c6 = cache%c6
+   c6dcn = cache%dc6dcn
+   c6dq = cache%dc6dq
 
-   if (with_cn .and. any(abs(gwdcn - numdcn) > thr2)) then
-      call test_failed(error, "Gaussian weights derivatives do not match")
-      print'(3es21.14)', gwdcn
-      print'("---")'
-      print'(3es21.14)', numdcn
-      print'("---")'
-      print'(3es21.14)', gwdcn - numdcn
+   if (with_cn .and. any(abs(c6dcn - numdcn) > 2*thr2)) then
+     call test_failed(error, "C6 CN derivatives do not match")
+     print'(3es21.14)', c6dcn
+     print'("---")'
+     print'(3es21.14)', numdcn
+     print'("---")'
+     print'(3es21.14)', c6dcn - numdcn
    end if
 
-   if (with_q .and. any(abs(gwdq - numdq) > thr2)) then
-      call test_failed(error, "Gaussian weights derivatives do not match")
-      print'(3es21.14)', gwdq
+   if (with_q .and. any(abs(c6dq - numdq) > 2*thr2)) then
+      call test_failed(error, "C6 Q derivatives do not match")
+      print'(3es21.14)', c6dq
       print'("---")'
       print'(3es21.14)', numdq
       print'("---")'
-      print'(3es21.14)', gwdq - numdq
+      print'(3es21.14)', c6dq - numdq
    end if
 
-end subroutine test_dgw_gen
+end subroutine test_dc6_gen
 
 
-subroutine test_pol_gen(error, mol, d4, ref, with_cn, with_q, qat)
+subroutine test_pol_gen(error, mol, d4, ref, ref_qq, with_cn, &
+   & with_q, qat)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -253,8 +263,11 @@ subroutine test_pol_gen(error, mol, d4, ref, with_cn, with_q, qat)
    !> Dispersion model
    class(dispersion_model), intent(in) :: d4
 
-   !> Reference polarizabilities
+   !> Reference dipole-dipole polarizabilities
    real(wp), intent(in) :: ref(:)
+
+   !> Reference quadrupole-quadrupole polarizabilities
+   real(wp), intent(in) :: ref_qq(:)
 
    !> Calculate coordination number
    logical, intent(in) :: with_cn
@@ -265,13 +278,14 @@ subroutine test_pol_gen(error, mol, d4, ref, with_cn, with_q, qat)
    !> Atomic charges
    real(wp), optional, intent(in) :: qat(:)
 
-   real(wp), allocatable :: cn(:), q(:), alpha(:), gwvec(:, :, :)
+   real(wp), allocatable :: cn(:), q(:), alpha(:), alphaqq(:)
+   type(dispersion_cache) :: cache
    real(wp), parameter :: cutoff = 30.0_wp
    real(wp), allocatable :: lattr(:, :)
    class(ncoord_type), allocatable :: ncoord
 
    allocate(cn(mol%nat), q(mol%nat), alpha(mol%nat), &
-      & gwvec(maxval(d4%ref), mol%nat, d4%ncoup))
+      & alphaqq(mol%nat))
    cn(:) = 0.0_wp
    q(:) = 0.0_wp
 
@@ -279,7 +293,8 @@ subroutine test_pol_gen(error, mol, d4, ref, with_cn, with_q, qat)
       call new_ncoord(ncoord, mol, cn_count%dftd4, &
          & cutoff=cutoff, rcov=d4%rcov, en=d4%en, error=error)
       if (allocated(error)) return
-      call get_lattice_points(mol%periodic, mol%lattice, cutoff, lattr)
+      call get_lattice_points(mol%periodic, mol%lattice, &
+         & cutoff, lattr)
       call ncoord%get_coordination_number(mol, lattr, cn)
    end if
 
@@ -292,14 +307,21 @@ subroutine test_pol_gen(error, mol, d4, ref, with_cn, with_q, qat)
       end if
    end if
 
-   call d4%weight_references(mol, cn, q, gwvec)
+   call d4%update(mol, cache, cn, q, grad=.false.)
 
-   call d4%get_polarizabilities(mol, gwvec, alpha=alpha)
+   call d4%get_polarizabilities(cache, alpha, alphaqq)
 
    if (any(abs(alpha - ref) > thr2)) then
       call test_failed(error, "Polarizabilities do not match")
       where(abs(alpha) < thr) alpha = 0.0_wp
       print'(3(es20.13,"_wp,"), " &")', alpha
+   end if
+   
+   if (any(abs(alphaqq - ref_qq) > thr2)) then
+      call test_failed(error, &
+         & "Quadrupole polarizabilities do not match")
+      where(abs(alphaqq) < thr) alphaqq = 0.0_wp
+      print'(3(es20.13,"_wp,"), " &")', alphaqq
    end if
 
 end subroutine test_pol_gen
@@ -325,20 +347,23 @@ subroutine test_dpol_gen(error, mol, d4, with_cn, with_q, qat)
    !> Atomic charges
    real(wp), optional, intent(in) :: qat(:)
 
-   integer :: iat, mref, ncoup
-   real(wp), allocatable :: cn(:), q(:), gwvec(:, :, :), gwdcn(:, :, :), gwdq(:, :, :)
+   integer :: iat
+   real(wp), allocatable :: cn(:), q(:)
    real(wp), allocatable :: alpha(:), alphadcn(:), alphadq(:)
+   real(wp), allocatable :: alphaqq(:), alphaqqcn(:), alphaqqq(:)
    real(wp), allocatable :: alphar(:), alphal(:), numdcn(:), numdq(:)
+   real(wp), allocatable :: qqr(:), qql(:), numqqcn(:), numqqq(:)
+   type(dispersion_cache) :: cache
    real(wp), parameter :: cutoff = 30.0_wp, lattr(3, 1) = 0.0_wp
-   real(wp), parameter :: step = 1.0e-6_wp
+   real(wp), parameter :: step = 1.0e-5_wp
    class(ncoord_type), allocatable :: ncoord
 
-   mref = maxval(d4%ref)
-   ncoup = d4%ncoup
-   allocate(cn(mol%nat), q(mol%nat), gwvec(mref, mol%nat, ncoup), &
-      & gwdcn(mref, mol%nat, ncoup), gwdq(mref, mol%nat, ncoup), &
+   allocate(cn(mol%nat), q(mol%nat), &
       & alpha(mol%nat), alphadcn(mol%nat), alphadq(mol%nat), &
-      & alphar(mol%nat), alphal(mol%nat), numdcn(mol%nat), numdq(mol%nat))
+      & alphaqq(mol%nat), alphaqqcn(mol%nat), alphaqqq(mol%nat), &
+      & alphar(mol%nat), alphal(mol%nat), numdcn(mol%nat), &
+      & numdq(mol%nat), qqr(mol%nat), qql(mol%nat), &
+      & numqqcn(mol%nat), numqqq(mol%nat))
    cn(:) = 0.0_wp
    q(:) = 0.0_wp
 
@@ -361,36 +386,39 @@ subroutine test_dpol_gen(error, mol, d4, with_cn, with_q, qat)
    if (with_cn) then
       do iat = 1, mol%nat
          cn(iat) = cn(iat) + step
-         call d4%weight_references(mol, cn, q, gwvec)
-         call d4%get_polarizabilities(mol, gwvec, alpha=alphar)
+         call d4%update(mol, cache, cn, q, grad=.false.)
+         call d4%get_polarizabilities(cache, alphar, qqr)
          cn(iat) = cn(iat) - 2*step
-         call d4%weight_references(mol, cn, q, gwvec)
-         call d4%get_polarizabilities(mol, gwvec, alpha=alphal)
+         call d4%update(mol, cache, cn, q, grad=.false.)
+         call d4%get_polarizabilities(cache, alphal, qql)
          cn(iat) = cn(iat) + step
          numdcn(iat) = 0.5_wp*(alphar(iat) - alphal(iat))/step
+         numqqcn(iat) = 0.5_wp*(qqr(iat) - qql(iat))/step
       end do
    end if
 
    if (with_q) then
       do iat = 1, mol%nat
          q(iat) = q(iat) + step
-         call d4%weight_references(mol, cn, q, gwvec)
-         call d4%get_polarizabilities(mol, gwvec, alpha=alphar)
+         call d4%update(mol, cache, cn, q, grad=.false.)
+         call d4%get_polarizabilities(cache, alphar, qqr)
          q(iat) = q(iat) - 2*step
-         call d4%weight_references(mol, cn, q, gwvec)
-         call d4%get_polarizabilities(mol, gwvec, alpha=alphal)
+         call d4%update(mol, cache, cn, q, grad=.false.)
+         call d4%get_polarizabilities(cache, alphal, qql)
          q(iat) = q(iat) + step
          numdq(iat) = 0.5_wp*(alphar(iat) - alphal(iat))/step
+         numqqq(iat) = 0.5_wp*(qqr(iat) - qql(iat))/step
       end do
    end if
 
-   call d4%weight_references(mol, cn, q, gwvec, gwdcn, gwdq)
-   call d4%get_polarizabilities(mol, gwvec, gwdcn=gwdcn, gwdq=gwdq, &
-      & alpha=alpha, dadcn=alphadcn, dadq=alphadq)
+   call d4%update(mol, cache, cn, q, grad=.true.)
+   call d4%get_polarizabilities(cache, alpha, alphaqq, &
+      & dadcn=alphadcn, dadq=alphadq, daqqdcn=alphaqqcn, &
+      & daqqdq=alphaqqq)
 
 
    if (with_cn .and. any(abs(alphadcn - numdcn) > thr2)) then
-     call test_failed(error, "Gaussian weights derivatives do not match")
+     call test_failed(error, "Polarizability CN derivatives do not match")
      print'(3es21.14)', alphadcn
      print'("---")'
      print'(3es21.14)', numdcn
@@ -399,7 +427,7 @@ subroutine test_dpol_gen(error, mol, d4, with_cn, with_q, qat)
    end if
 
    if (with_q .and. any(abs(alphadq - numdq) > thr2)) then
-      call test_failed(error, "Gaussian weights derivatives do not match")
+      call test_failed(error, "Polarizability Q derivatives do not match")
       print'(3es21.14)', alphadq
       print'("---")'
       print'(3es21.14)', numdq
@@ -407,45 +435,123 @@ subroutine test_dpol_gen(error, mol, d4, with_cn, with_q, qat)
       print'(3es21.14)', alphadq - numdq
    end if
 
+   if (with_cn .and. any(abs(alphaqqcn - numqqcn) > thr2)) then
+     call test_failed(error, &
+        & "Quadrupole polarizability CN derivatives do not match")
+     print'(3es21.14)', alphaqqcn
+     print'("---")'
+     print'(3es21.14)', numqqcn
+     print'("---")'
+     print'(3es21.14)', alphaqqcn - numqqcn
+   end if
+
+   if (with_q .and. any(abs(alphaqqq - numqqq) > thr2)) then
+      call test_failed(error, &
+         & "Quadrupole polarizability Q derivatives do not match")
+      print'(3es21.14)', alphaqqq
+      print'("---")'
+      print'(3es21.14)', numqqq
+      print'("---")'
+      print'(3es21.14)', alphaqqq - numqqq
+   end if
+
 end subroutine test_dpol_gen
 
 
-subroutine test_gw_d4_mb01(error)
+subroutine test_c6_d4_mb01(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
 
    type(structure_type) :: mol
    type(d4_model) :: d4
-   real(wp), parameter :: ref(5, 16, 1) = reshape([&
-      & 1.2088234202205E-11_wp, 1.0375924114812E+00_wp, 2.4445602531076E-09_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 5.5306460372092E-03_wp, &
-      & 9.9446935396279E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 3.1404764970412E-06_wp, 6.3956931077352E-02_wp, &
-      & 4.7846317290481E-01_wp, 2.9468368515225E-01_wp, 0.0000000000000E+00_wp, &
-      & 7.4310920077799E-05_wp, 9.9992568907992E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 4.4395780891660E-02_wp, &
-      & 8.5383545436310E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.1950286131613E-02_wp, 9.8804971386839E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 5.6992908407601E-05_wp, 9.9994300709159E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 5.6167960886507E-07_wp, &
-      & 2.9078967459651E-02_wp, 6.1859560324107E-01_wp, 1.5104287585421E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 4.9771287942905E-14_wp, &
-      & 1.3962072360858E-04_wp, 6.8484995485525E-01_wp, 1.6516463249478E-12_wp, &
-      & 1.9880162618842E-02_wp, 9.8011983738116E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.1966389405645E-02_wp, &
-      & 9.8803361059436E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.2874045548253E-05_wp, 9.7726740456727E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 4.1491138092838E-06_wp, 8.6768202830170E-01_wp, 0.0000000000000E+00_wp, &
-      & 4.3169267440676E-12_wp, 3.6465051654232E-04_wp, 8.8903503100593E-01_wp, &
-      & 1.2720379452861E-05_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.4066048552144E-05_wp, 6.8494819902320E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.9574616732692E-10_wp, &
-      & 1.0064486114128E+00_wp, 0.0000000000000E+00_wp], &
-      & [5, 16, 1])
+   real(wp), parameter :: ref(16, 16) = reshape([&
+      & 1.0673751057011E+02_wp, 1.3341905517525E+01_wp, 2.5653153287381E+01_wp, &
+      & 1.3286256032550E+01_wp, 1.8172837654743E+01_wp, 1.3407379807008E+01_wp, &
+      & 1.3286079405123E+01_wp, 2.5572059731044E+01_wp, 3.2413191615239E+01_wp, &
+      & 1.3488257086895E+01_wp, 1.3407544045253E+01_wp, 7.3738556418539E+01_wp, &
+      & 4.4740018054061E+01_wp, 4.7377208046689E+01_wp, 3.2412969775949E+01_wp, &
+      & 1.0847087588239E+02_wp, 1.3341905517525E+01_wp, 3.0564966218613E+00_wp, &
+      & 6.5553944080817E+00_wp, 3.0470665530425E+00_wp, 5.1002826817488E+00_wp, &
+      & 3.0675915503404E+00_wp, 3.0470366226884E+00_wp, 6.5291578413266E+00_wp, &
+      & 7.7571265678988E+00_wp, 3.0812965885013E+00_wp, 3.0676193812890E+00_wp, &
+      & 1.7231850034693E+01_wp, 1.0121118362811E+01_wp, 1.0554487753558E+01_wp, &
+      & 7.7570715810400E+00_wp, 2.0891158034439E+01_wp, 2.5653153287381E+01_wp, &
+      & 6.5553944080817E+00_wp, 1.4581513138206E+01_wp, 6.5365717713675E+00_wp, &
+      & 1.1626599584016E+01_wp, 6.5775401434039E+00_wp, 6.5365120296846E+00_wp, &
+      & 1.4518124333712E+01_wp, 1.6957726525989E+01_wp, 6.6048957183646E+00_wp, &
+      & 6.5775956946247E+00_wp, 3.7235277639546E+01_wp, 2.1680017664472E+01_wp, &
+      & 2.2530197721674E+01_wp, 1.6957605864802E+01_wp, 4.3281495531031E+01_wp, &
+      & 1.3286256032550E+01_wp, 3.0470665530425E+00_wp, 6.5365717713675E+00_wp, &
+      & 3.0376708717485E+00_wp, 5.0864296817319E+00_wp, 3.0581210229485E+00_wp, &
+      & 3.0376410505379E+00_wp, 6.5103995227002E+00_wp, 7.7339832042333E+00_wp, &
+      & 3.0717760845559E+00_wp, 3.0581487524093E+00_wp, 1.7179411037999E+01_wp, &
+      & 1.0089722744091E+01_wp, 1.0521470167813E+01_wp, 7.7339283801084E+00_wp, &
+      & 2.0820557350817E+01_wp, 1.8172837654743E+01_wp, 5.1002826817488E+00_wp, &
+      & 1.1626599584016E+01_wp, 5.0864296817319E+00_wp, 9.4188339482987E+00_wp, &
+      & 5.1165814010224E+00_wp, 5.0863857133152E+00_wp, 1.1573411106197E+01_wp, &
+      & 1.3364030360454E+01_wp, 5.1367144347811E+00_wp, 5.1166222853615E+00_wp, &
+      & 2.9120203955066E+01_wp, 1.6851140998078E+01_wp, 1.7468396982731E+01_wp, &
+      & 1.3363934948055E+01_wp, 3.2809103726717E+01_wp, 1.3407379807008E+01_wp, &
+      & 3.0675915503404E+00_wp, 6.5775401434039E+00_wp, 3.0581210229485E+00_wp, &
+      & 5.1165814010224E+00_wp, 3.0787340802721E+00_wp, 3.0580909641819E+00_wp, &
+      & 6.5512279033320E+00_wp, 7.7843558458146E+00_wp, 3.0924979182465E+00_wp, &
+      & 3.0787620306260E+00_wp, 1.7293547030655E+01_wp, 1.0158056814792E+01_wp, &
+      & 1.0593334527578E+01_wp, 7.7843006674916E+00_wp, 2.0974223126583E+01_wp, &
+      & 1.3286079405123E+01_wp, 3.0470366226884E+00_wp, 6.5365120296846E+00_wp, &
+      & 3.0376410505379E+00_wp, 5.0863857133152E+00_wp, 3.0580909641819E+00_wp, &
+      & 3.0376112296738E+00_wp, 6.5103399851583E+00_wp, 7.7339097488767E+00_wp, &
+      & 3.0717458671673E+00_wp, 3.0581186933205E+00_wp, 1.7179244600430E+01_wp, &
+      & 1.0089623096676E+01_wp, 1.0521365372392E+01_wp, 7.7338549252683E+00_wp, &
+      & 2.0820333269371E+01_wp, 2.5572059731044E+01_wp, 6.5291578413266E+00_wp, &
+      & 1.4518124333712E+01_wp, 6.5103995227002E+00_wp, 1.1573411106197E+01_wp, &
+      & 6.5512279033320E+00_wp, 6.5103399851583E+00_wp, 1.4455069876704E+01_wp, &
+      & 1.6886749979232E+01_wp, 6.5784900026390E+00_wp, 6.5512832647310E+00_wp, &
+      & 3.7083479708919E+01_wp, 2.1593323739087E+01_wp, 2.2440726387215E+01_wp, &
+      & 1.6886629834681E+01_wp, 4.3119210273214E+01_wp, 3.2413191615239E+01_wp, &
+      & 7.7571265678988E+00_wp, 1.6957726525989E+01_wp, 7.7339832042333E+00_wp, &
+      & 1.3364030360454E+01_wp, 7.7843558458146E+00_wp, 7.7339097488767E+00_wp, &
+      & 1.6886749979232E+01_wp, 1.9888865465619E+01_wp, 7.8179908794822E+00_wp, &
+      & 7.7844241487907E+00_wp, 4.3903940006890E+01_wp, 2.5674131507899E+01_wp, &
+      & 2.6728387684242E+01_wp, 1.9888724314305E+01_wp, 5.2175766976938E+01_wp, &
+      & 1.3488257086895E+01_wp, 3.0812965885013E+00_wp, 6.6048957183646E+00_wp, &
+      & 3.0717760845559E+00_wp, 5.1367144347811E+00_wp, 3.0924979182465E+00_wp, &
+      & 3.0717458671673E+00_wp, 6.5784900026390E+00_wp, 7.8179908794822E+00_wp, &
+      & 3.1063343888377E+00_wp, 3.0925260160962E+00_wp, 1.7369758399270E+01_wp, &
+      & 1.0203685130015E+01_wp, 1.0641320102372E+01_wp, 7.8179354646525E+00_wp, &
+      & 2.1076829489466E+01_wp, 1.3407544045253E+01_wp, 3.0676193812890E+00_wp, &
+      & 6.5775956946247E+00_wp, 3.0581487524093E+00_wp, 5.1166222853615E+00_wp, &
+      & 3.0787620306260E+00_wp, 3.0581186933205E+00_wp, 6.5512832647310E+00_wp, &
+      & 7.7844241487907E+00_wp, 3.0925260160962E+00_wp, 3.0787899812795E+00_wp, &
+      & 1.7293701793791E+01_wp, 1.0158149472637E+01_wp, 1.0593431972331E+01_wp, &
+      & 7.7843689699874E+00_wp, 2.0974431490280E+01_wp, 7.3738556418539E+01_wp, &
+      & 1.7231850034693E+01_wp, 3.7235277639546E+01_wp, 1.7179411037999E+01_wp, &
+      & 2.9120203955066E+01_wp, 1.7293547030655E+01_wp, 1.7179244600430E+01_wp, &
+      & 3.7083479708919E+01_wp, 4.3903940006890E+01_wp, 1.7369758399270E+01_wp, &
+      & 1.7293701793791E+01_wp, 9.7300368597444E+01_wp, 5.7048187086676E+01_wp, &
+      & 5.9450286555495E+01_wp, 4.3903628523784E+01_wp, 1.1700185746899E+02_wp, &
+      & 4.4740018054061E+01_wp, 1.0121118362811E+01_wp, 2.1680017664472E+01_wp, &
+      & 1.0089722744091E+01_wp, 1.6851140998078E+01_wp, 1.0158056814792E+01_wp, &
+      & 1.0089623096676E+01_wp, 2.1593323739087E+01_wp, 2.5674131507899E+01_wp, &
+      & 1.0203685130015E+01_wp, 1.0158149472637E+01_wp, 5.7048187086676E+01_wp, &
+      & 3.3522232984596E+01_wp, 3.4965993468169E+01_wp, 2.5673949524761E+01_wp, &
+      & 6.9388660920841E+01_wp, 4.7377208046689E+01_wp, 1.0554487753558E+01_wp, &
+      & 2.2530197721674E+01_wp, 1.0521470167813E+01_wp, 1.7468396982731E+01_wp, &
+      & 1.0593334527578E+01_wp, 1.0521365372392E+01_wp, 2.2440726387215E+01_wp, &
+      & 2.6728387684242E+01_wp, 1.0641320102372E+01_wp, 1.0593431972331E+01_wp, &
+      & 5.9450286555495E+01_wp, 3.4965993468169E+01_wp, 3.6486691424878E+01_wp, &
+      & 2.6728198279961E+01_wp, 7.2679869961361E+01_wp, 3.2412969775949E+01_wp, &
+      & 7.7570715810400E+00_wp, 1.6957605864802E+01_wp, 7.7339283801084E+00_wp, &
+      & 1.3363934948055E+01_wp, 7.7843006674916E+00_wp, 7.7338549252683E+00_wp, &
+      & 1.6886629834681E+01_wp, 1.9888724314305E+01_wp, 7.8179354646525E+00_wp, &
+      & 7.7843689699874E+00_wp, 4.3903628523784E+01_wp, 2.5673949524761E+01_wp, &
+      & 2.6728198279961E+01_wp, 1.9888583164001E+01_wp, 5.2175398249584E+01_wp, &
+      & 1.0847087588239E+02_wp, 2.0891158034439E+01_wp, 4.3281495531031E+01_wp, &
+      & 2.0820557350817E+01_wp, 3.2809103726717E+01_wp, 2.0974223126583E+01_wp, &
+      & 2.0820333269371E+01_wp, 4.3119210273214E+01_wp, 5.2175766976938E+01_wp, &
+      & 2.1076829489466E+01_wp, 2.0974431490280E+01_wp, 1.1700185746899E+02_wp, &
+      & 6.9388660920841E+01_wp, 7.2679869961361E+01_wp, 5.2175398249584E+01_wp, &
+      & 1.5002113554136E+02_wp], [16, 16])
 
    call get_structure(mol, "MB16-43", "01")
    call new_d4_model(error, d4, mol)
@@ -453,446 +559,104 @@ subroutine test_gw_d4_mb01(error)
       call test_failed(error, "D4 model could not be created")
       return
    end if
-   call test_gw_gen(error, mol, d4, ref, with_cn=.true., with_q=.false.)
+   call test_c6_gen(error, mol, d4, ref, with_cn=.true., with_q=.false.)
 
-end subroutine test_gw_d4_mb01
+end subroutine test_c6_d4_mb01
 
-subroutine test_gw_d4s_mb01(error)
+subroutine test_c6_d4s_mb01(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
 
    type(structure_type) :: mol
    type(d4s_model) :: d4s
-   real(wp), parameter :: ref(5, 16, 16) = reshape([&
-      & 2.3131592204844E-01_wp, 5.4031280728148E-01_wp, 2.6137589903151E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 5.1809010783127E-01_wp, &
-      & 4.8190989216873E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 8.4636699292911E-02_wp, 2.8916075663289E-01_wp, &
-      & 1.2624087141442E-01_wp, 4.0965002951526E-01_wp, 0.0000000000000E+00_wp, &
-      & 3.3462728435151E-01_wp, 6.6537271564849E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 6.1876633063175E-01_wp, &
-      & 3.4063351416268E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 5.5278384311783E-01_wp, 4.4721615688217E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 3.2486444154312E-01_wp, 6.7513555845688E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 7.5533304743754E-02_wp, &
-      & 2.8014049695601E-01_wp, 1.4158516457382E-01_wp, 4.0913000753423E-01_wp, &
-      & 0.0000000000000E+00_wp, 7.5382669995544E-03_wp, 5.6004612639252E-02_wp, &
-      & 2.5449767768026E-01_wp, 3.7693011028422E-01_wp, 8.5938011138013E-02_wp, &
-      & 5.7538171652020E-01_wp, 4.2461828347980E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 5.5284405139333E-01_wp, &
-      & 4.4715594860667E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 4.9408119795623E-01_wp, 4.9442431983631E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.0184875449037E-03_wp, 1.1949848707631E-02_wp, 7.6197788846927E-02_wp, &
-      & 2.6107757645099E-01_wp, 5.2942068197745E-01_wp, 1.6601987730686E-02_wp, &
-      & 8.4375771909016E-02_wp, 2.4112060689684E-01_wp, 3.7174716102808E-01_wp, &
-      & 1.8680908647673E-01_wp, 4.6453010724907E-03_wp, 4.0443789086525E-02_wp, &
-      & 2.3923007812319E-01_wp, 4.1892702798575E-01_wp, 6.3157269210764E-02_wp, &
-      & 1.3398605819820E-02_wp, 7.0902968576691E-02_wp, 2.5998769707888E-01_wp, &
-      & 6.6186984945544E-01_wp, 0.0000000000000E+00_wp, 5.5310440465207E-02_wp, &
-      & 8.7883262647393E-01_wp, 1.0298872576581E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 4.1485451554553E-02_wp, 9.5851454844545E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 6.7032432969941E-05_wp, 1.0329252259896E-01_wp, 3.9006942107954E-01_wp, &
-      & 3.6487976107888E-01_wp, 0.0000000000000E+00_wp, 2.9607006073691E-03_wp, &
-      & 9.9703929939263E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 7.5207498914890E-02_wp, 8.2630508485236E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 6.6472988033016E-02_wp, 9.3352701196698E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.5170748238388E-03_wp, &
-      & 9.9748292517616E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.1199100233663E-05_wp, 6.1735949348506E-02_wp, &
-      & 5.2547467287298E-01_wp, 2.3534849766078E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.1545009180054E-08_wp, 4.8156324470167E-03_wp, &
-      & 6.8119098700326E-01_wp, 9.8640706987545E-08_wp, 9.0609306620312E-02_wp, &
-      & 9.0939069337969E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 6.6527647187693E-02_wp, 9.3347235281231E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 5.0319522106180E-03_wp, 9.7236235992780E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.0833572554318E-11_wp, 3.0735372456843E-06_wp, 8.7114485461151E-03_wp, &
-      & 8.5918441677693E-01_wp, 1.0676321498807E-09_wp, 4.8559648922814E-05_wp, &
-      & 4.5302763715688E-02_wp, 8.3289153450766E-01_wp, 1.2364799599275E-02_wp, &
-      & 0.0000000000000E+00_wp, 4.8553772734271E-10_wp, 1.2356257410943E-03_wp, &
-      & 6.8399234763729E-01_wp, 5.1995420254894E-09_wp, 1.2027896985957E-11_wp, &
-      & 5.7304401546169E-07_wp, 2.4468959606775E-03_wp, 1.0040005130011E+00_wp, &
-      & 0.0000000000000E+00_wp, 8.8802202146486E-02_wp, 8.0146979806795E-01_wp, &
-      & 1.4628116593891E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.2198992510853E-02_wp, 9.7780100748915E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 3.1404764970412E-06_wp, &
-      & 6.3956931077352E-02_wp, 4.7846317290481E-01_wp, 2.9468368515225E-01_wp, &
-      & 0.0000000000000E+00_wp, 9.4397261326925E-04_wp, 9.9905602738673E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 4.4395780891660E-02_wp, 8.5383545436310E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 3.9032141252572E-02_wp, &
-      & 9.6096785874743E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 7.7726046635812E-04_wp, 9.9922273953364E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 5.6167960886507E-07_wp, 2.9078967459651E-02_wp, 6.1859560324107E-01_wp, &
-      & 1.5104287585421E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 8.6218571603764E-13_wp, 3.1641253888564E-04_wp, 6.8471161857811E-01_wp, &
-      & 2.0919541563050E-11_wp, 5.6611833802765E-02_wp, 9.4338816619724E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 3.9070615176354E-02_wp, 9.6092938482365E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.2874045548253E-05_wp, &
-      & 9.7726740456727E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.3913444097198E-09_wp, 6.3616927572147E-04_wp, 8.6706543647995E-01_wp, &
-      & 0.0000000000000E+00_wp, 1.9173135281474E-07_wp, 8.9543641410655E-03_wp, &
-      & 8.7950766885962E-01_wp, 1.2071886445160E-03_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 3.9522919456175E-05_wp, 6.8492827950137E-01_wp, &
-      & 2.3393071766261E-13_wp, 0.0000000000000E+00_wp, 1.3854678522329E-13_wp, &
-      & 4.1660837709814E-06_wp, 1.0064444444547E+00_wp, 0.0000000000000E+00_wp, &
-      & 5.5310440465207E-02_wp, 8.7883262647393E-01_wp, 1.0298872576581E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 4.1485451554553E-02_wp, &
-      & 9.5851454844545E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 6.7032432969941E-05_wp, 1.0329252259896E-01_wp, &
-      & 3.9006942107954E-01_wp, 3.6487976107888E-01_wp, 0.0000000000000E+00_wp, &
-      & 2.9607006073691E-03_wp, 9.9703929939263E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 7.5207498914890E-02_wp, &
-      & 8.2630508485236E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 6.6472988033016E-02_wp, 9.3352701196698E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.5170748238388E-03_wp, 9.9748292517616E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.1199100233663E-05_wp, &
-      & 6.1735949348506E-02_wp, 5.2547467287298E-01_wp, 2.3534849766078E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.1545009180054E-08_wp, &
-      & 4.8156324470167E-03_wp, 6.8119098700326E-01_wp, 9.8640706987545E-08_wp, &
-      & 9.0609306620312E-02_wp, 9.0939069337969E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 6.6527647187693E-02_wp, &
-      & 9.3347235281231E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 5.0319522106180E-03_wp, 9.7236235992780E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.0833572554318E-11_wp, 3.0735372456843E-06_wp, &
-      & 8.7114485461151E-03_wp, 8.5918441677693E-01_wp, 1.0676321498807E-09_wp, &
-      & 4.8559648922814E-05_wp, 4.5302763715688E-02_wp, 8.3289153450766E-01_wp, &
-      & 1.2364799599275E-02_wp, 0.0000000000000E+00_wp, 4.8553772734271E-10_wp, &
-      & 1.2356257410943E-03_wp, 6.8399234763729E-01_wp, 5.1995420254894E-09_wp, &
-      & 1.2027896985957E-11_wp, 5.7304401546169E-07_wp, 2.4468959606775E-03_wp, &
-      & 1.0040005130011E+00_wp, 0.0000000000000E+00_wp, 6.0951918468791E-02_wp, &
-      & 8.6529295743687E-01_wp, 1.1079756841654E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.3336298784774E-02_wp, 9.8666370121523E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 3.1404764970412E-06_wp, 6.3956931077352E-02_wp, 4.7846317290481E-01_wp, &
-      & 2.9468368515225E-01_wp, 0.0000000000000E+00_wp, 3.7174949263315E-04_wp, &
-      & 9.9962825050737E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 4.4395780891660E-02_wp, 8.5383545436310E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.5290254001583E-02_wp, 9.7470974599842E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.9822583135455E-04_wp, &
-      & 9.9970177416865E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 5.6167960886507E-07_wp, 2.9078967459651E-02_wp, &
-      & 6.1859560324107E-01_wp, 1.5104287585421E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 4.9771287942905E-14_wp, 1.3962072360858E-04_wp, &
-      & 6.8484995485525E-01_wp, 1.6516463249478E-12_wp, 3.8575470395886E-02_wp, &
-      & 9.6142452960411E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.5318540756121E-02_wp, 9.7468145924388E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.2874045548253E-05_wp, 9.7726740456727E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.6273317494726E-10_wp, 2.3773118630915E-04_wp, &
-      & 8.6745414891661E-01_wp, 0.0000000000000E+00_wp, 2.3703664758231E-08_wp, &
-      & 4.8024934491719E-03_wp, 8.8424901114203E-01_wp, 4.9697715237582E-04_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.4066048552144E-05_wp, &
-      & 6.8494819902320E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.3920190449891E-06_wp, 1.0064472192320E+00_wp, &
-      & 0.0000000000000E+00_wp, 5.5310440465207E-02_wp, 8.7883262647393E-01_wp, &
-      & 1.0298872576581E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 4.1485451554553E-02_wp, 9.5851454844545E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 6.7032432969941E-05_wp, &
-      & 1.0329252259896E-01_wp, 3.9006942107954E-01_wp, 3.6487976107888E-01_wp, &
-      & 0.0000000000000E+00_wp, 2.9607006073691E-03_wp, 9.9703929939263E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 7.5207498914890E-02_wp, 8.2630508485236E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 6.6472988033016E-02_wp, &
-      & 9.3352701196698E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.5170748238388E-03_wp, 9.9748292517616E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.1199100233663E-05_wp, 6.1735949348506E-02_wp, 5.2547467287298E-01_wp, &
-      & 2.3534849766078E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.1545009180054E-08_wp, 4.8156324470167E-03_wp, 6.8119098700326E-01_wp, &
-      & 9.8640706987545E-08_wp, 9.0609306620312E-02_wp, 9.0939069337969E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 6.6527647187693E-02_wp, 9.3347235281231E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 5.0319522106180E-03_wp, &
-      & 9.7236235992780E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.0833572554318E-11_wp, &
-      & 3.0735372456843E-06_wp, 8.7114485461151E-03_wp, 8.5918441677693E-01_wp, &
-      & 1.0676321498807E-09_wp, 4.8559648922814E-05_wp, 4.5302763715688E-02_wp, &
-      & 8.3289153450766E-01_wp, 1.2364799599275E-02_wp, 0.0000000000000E+00_wp, &
-      & 4.8553772734271E-10_wp, 1.2356257410943E-03_wp, 6.8399234763729E-01_wp, &
-      & 5.1995420254894E-09_wp, 1.2027896985957E-11_wp, 5.7304401546169E-07_wp, &
-      & 2.4468959606775E-03_wp, 1.0040005130011E+00_wp, 0.0000000000000E+00_wp, &
-      & 5.5310440465207E-02_wp, 8.7883262647393E-01_wp, 1.0298872576581E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 4.1485451554553E-02_wp, &
-      & 9.5851454844545E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 6.7032432969941E-05_wp, 1.0329252259896E-01_wp, &
-      & 3.9006942107954E-01_wp, 3.6487976107888E-01_wp, 0.0000000000000E+00_wp, &
-      & 2.9607006073691E-03_wp, 9.9703929939263E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 7.5207498914890E-02_wp, &
-      & 8.2630508485236E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 6.6472988033016E-02_wp, 9.3352701196698E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.5170748238388E-03_wp, 9.9748292517616E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.1199100233663E-05_wp, &
-      & 6.1735949348506E-02_wp, 5.2547467287298E-01_wp, 2.3534849766078E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.1545009180054E-08_wp, &
-      & 4.8156324470167E-03_wp, 6.8119098700326E-01_wp, 9.8640706987545E-08_wp, &
-      & 9.0609306620312E-02_wp, 9.0939069337969E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 6.6527647187693E-02_wp, &
-      & 9.3347235281231E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 5.0319522106180E-03_wp, 9.7236235992780E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.0833572554318E-11_wp, 3.0735372456843E-06_wp, &
-      & 8.7114485461151E-03_wp, 8.5918441677693E-01_wp, 1.0676321498807E-09_wp, &
-      & 4.8559648922814E-05_wp, 4.5302763715688E-02_wp, 8.3289153450766E-01_wp, &
-      & 1.2364799599275E-02_wp, 0.0000000000000E+00_wp, 4.8553772734271E-10_wp, &
-      & 1.2356257410943E-03_wp, 6.8399234763729E-01_wp, 5.1995420254894E-09_wp, &
-      & 1.2027896985957E-11_wp, 5.7304401546169E-07_wp, 2.4468959606775E-03_wp, &
-      & 1.0040005130011E+00_wp, 0.0000000000000E+00_wp, 8.8802202146486E-02_wp, &
-      & 8.0146979806795E-01_wp, 1.4628116593891E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.2198992510853E-02_wp, 9.7780100748915E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 3.1404764970412E-06_wp, 6.3956931077352E-02_wp, 4.7846317290481E-01_wp, &
-      & 2.9468368515225E-01_wp, 0.0000000000000E+00_wp, 9.4397261326925E-04_wp, &
-      & 9.9905602738673E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 4.4395780891660E-02_wp, 8.5383545436310E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 3.9032141252572E-02_wp, 9.6096785874743E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 7.7726046635812E-04_wp, &
-      & 9.9922273953364E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 5.6167960886507E-07_wp, 2.9078967459651E-02_wp, &
-      & 6.1859560324107E-01_wp, 1.5104287585421E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 8.6218571603764E-13_wp, 3.1641253888564E-04_wp, &
-      & 6.8471161857811E-01_wp, 2.0919541563050E-11_wp, 5.6611833802765E-02_wp, &
-      & 9.4338816619724E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 3.9070615176354E-02_wp, 9.6092938482365E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.2874045548253E-05_wp, 9.7726740456727E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.3913444097198E-09_wp, 6.3616927572147E-04_wp, &
-      & 8.6706543647995E-01_wp, 0.0000000000000E+00_wp, 1.9173135281474E-07_wp, &
-      & 8.9543641410655E-03_wp, 8.7950766885962E-01_wp, 1.2071886445160E-03_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 3.9522919456175E-05_wp, &
-      & 6.8492827950137E-01_wp, 2.3393071766261E-13_wp, 0.0000000000000E+00_wp, &
-      & 1.3854678522329E-13_wp, 4.1660837709814E-06_wp, 1.0064444444547E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.1619449180297E-01_wp, 7.4292303143376E-01_wp, &
-      & 1.7688691875381E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 4.5511447319703E-02_wp, 9.5448855268030E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 9.2508392559746E-06_wp, &
-      & 7.5824069699182E-02_wp, 4.4951921574350E-01_wp, 3.1887288951654E-01_wp, &
-      & 0.0000000000000E+00_wp, 3.5066919289813E-03_wp, 9.9649330807102E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 4.4395780891660E-02_wp, 8.5383545436310E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 7.1925482699841E-02_wp, &
-      & 9.2807451730016E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.9954258724411E-03_wp, 9.9700457412756E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.0238008000468E-06_wp, 3.8055054539114E-02_wp, 5.9074525520210E-01_wp, &
-      & 1.7718982934717E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 3.4151558259365E-08_wp, 6.5639826011158E-03_wp, 6.7982280802516E-01_wp, &
-      & 2.5898101368240E-07_wp, 9.7140202686718E-02_wp, 9.0285979731328E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 7.1982878187917E-02_wp, 9.2801712181208E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.1772574193346E-03_wp, &
-      & 9.7612947599990E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 3.5689039339356E-13_wp, &
-      & 3.8192206935584E-07_wp, 4.0712983354820E-03_wp, 8.6371381723556E-01_wp, &
-      & 3.5979138804999E-11_wp, 9.7693789150509E-06_wp, 2.8536546460626E-02_wp, &
-      & 8.5530890313171E-01_wp, 6.3404470879011E-03_wp, 0.0000000000000E+00_wp, &
-      & 1.7396779713960E-09_wp, 1.8302935084816E-03_wp, 6.8352702270097E-01_wp, &
-      & 1.6312609722908E-08_wp, 0.0000000000000E+00_wp, 7.9041698936705E-09_wp, &
-      & 4.0780312005162E-04_wp, 1.0060406958243E+00_wp, 0.0000000000000E+00_wp, &
-      & 5.5310440465207E-02_wp, 8.7883262647393E-01_wp, 1.0298872576581E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 4.1485451554553E-02_wp, &
-      & 9.5851454844545E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 6.7032432969941E-05_wp, 1.0329252259896E-01_wp, &
-      & 3.9006942107954E-01_wp, 3.6487976107888E-01_wp, 0.0000000000000E+00_wp, &
-      & 2.9607006073691E-03_wp, 9.9703929939263E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 7.5207498914890E-02_wp, &
-      & 8.2630508485236E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 6.6472988033016E-02_wp, 9.3352701196698E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.5170748238388E-03_wp, 9.9748292517616E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.1199100233663E-05_wp, &
-      & 6.1735949348506E-02_wp, 5.2547467287298E-01_wp, 2.3534849766078E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.1545009180054E-08_wp, &
-      & 4.8156324470167E-03_wp, 6.8119098700326E-01_wp, 9.8640706987545E-08_wp, &
-      & 9.0609306620312E-02_wp, 9.0939069337969E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 6.6527647187693E-02_wp, &
-      & 9.3347235281231E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 5.0319522106180E-03_wp, 9.7236235992780E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.0833572554318E-11_wp, 3.0735372456843E-06_wp, &
-      & 8.7114485461151E-03_wp, 8.5918441677693E-01_wp, 1.0676321498807E-09_wp, &
-      & 4.8559648922814E-05_wp, 4.5302763715688E-02_wp, 8.3289153450766E-01_wp, &
-      & 1.2364799599275E-02_wp, 0.0000000000000E+00_wp, 4.8553772734271E-10_wp, &
-      & 1.2356257410943E-03_wp, 6.8399234763729E-01_wp, 5.1995420254894E-09_wp, &
-      & 1.2027896985957E-11_wp, 5.7304401546169E-07_wp, 2.4468959606775E-03_wp, &
-      & 1.0040005130011E+00_wp, 0.0000000000000E+00_wp, 5.5310440465207E-02_wp, &
-      & 8.7883262647393E-01_wp, 1.0298872576581E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 4.1485451554553E-02_wp, 9.5851454844545E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 6.7032432969941E-05_wp, 1.0329252259896E-01_wp, 3.9006942107954E-01_wp, &
-      & 3.6487976107888E-01_wp, 0.0000000000000E+00_wp, 2.9607006073691E-03_wp, &
-      & 9.9703929939263E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 7.5207498914890E-02_wp, 8.2630508485236E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 6.6472988033016E-02_wp, 9.3352701196698E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.5170748238388E-03_wp, &
-      & 9.9748292517616E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.1199100233663E-05_wp, 6.1735949348506E-02_wp, &
-      & 5.2547467287298E-01_wp, 2.3534849766078E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.1545009180054E-08_wp, 4.8156324470167E-03_wp, &
-      & 6.8119098700326E-01_wp, 9.8640706987545E-08_wp, 9.0609306620312E-02_wp, &
-      & 9.0939069337969E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 6.6527647187693E-02_wp, 9.3347235281231E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 5.0319522106180E-03_wp, 9.7236235992780E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.0833572554318E-11_wp, 3.0735372456843E-06_wp, 8.7114485461151E-03_wp, &
-      & 8.5918441677693E-01_wp, 1.0676321498807E-09_wp, 4.8559648922814E-05_wp, &
-      & 4.5302763715688E-02_wp, 8.3289153450766E-01_wp, 1.2364799599275E-02_wp, &
-      & 0.0000000000000E+00_wp, 4.8553772734271E-10_wp, 1.2356257410943E-03_wp, &
-      & 6.8399234763729E-01_wp, 5.1995420254894E-09_wp, 1.2027896985957E-11_wp, &
-      & 5.7304401546169E-07_wp, 2.4468959606775E-03_wp, 1.0040005130011E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.7836181363501E-01_wp, 6.2456202118140E-01_wp, &
-      & 2.3160354638897E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 8.7002281543997E-02_wp, 9.1299771845600E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 3.1404764970412E-06_wp, &
-      & 6.3956931077352E-02_wp, 4.7846317290481E-01_wp, 2.9468368515225E-01_wp, &
-      & 0.0000000000000E+00_wp, 1.1450448372045E-02_wp, 9.8854955162796E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 4.4395780891660E-02_wp, 8.5383545436310E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.2478649046186E-01_wp, &
-      & 8.7521350953814E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.0110955182316E-02_wp, 9.8988904481768E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 5.6167960886507E-07_wp, 2.9078967459651E-02_wp, 6.1859560324107E-01_wp, &
-      & 1.5104287585421E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.0080902930002E-08_wp, 4.6325621083875E-03_wp, 6.8133424494767E-01_wp, &
-      & 8.7425251232161E-08_wp, 1.5789095742186E-01_wp, 8.4210904257814E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.2486469344048E-01_wp, 8.7513530655952E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.2874045548253E-05_wp, &
-      & 9.7726740456727E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.7281235340132E-12_wp, &
-      & 1.0839801911001E-06_wp, 5.9583550692028E-03_wp, 8.6187217041940E-01_wp, &
-      & 1.9632749283518E-10_wp, 2.1818061591790E-05_wp, 3.6017036179768E-02_wp, &
-      & 8.4547474113294E-01_wp, 8.8694849144924E-03_wp, 0.0000000000000E+00_wp, &
-      & 4.1393746281189E-10_wp, 1.1763869822125E-03_wp, 6.8403870138130E-01_wp, &
-      & 4.5070023665802E-09_wp, 0.0000000000000E+00_wp, 2.8208391560596E-10_wp, &
-      & 1.0107828306943E-04_wp, 1.0063475070808E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.5052252044350E-01_wp, 6.7503900878048E-01_wp, 2.0966764053284E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.4123874345618E-01_wp, &
-      & 8.5876125654382E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 3.2995570594716E-04_wp, 1.3239836014058E-01_wp, &
-      & 3.3638195237351E-01_wp, 4.0116925621724E-01_wp, 0.0000000000000E+00_wp, &
-      & 2.7738482922597E-02_wp, 9.7226151707740E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.2379486544581E-01_wp, &
-      & 7.8289211602208E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.8811788794004E-01_wp, 8.1188211205996E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.5107682180162E-02_wp, 9.7489231781984E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.3960579256771E-04_wp, &
-      & 9.0196670358265E-02_wp, 4.5739781308729E-01_wp, 2.9149367395236E-01_wp, &
-      & 0.0000000000000E+00_wp, 5.8317983398498E-12_wp, 1.3182770972301E-06_wp, &
-      & 1.8538244187819E-02_wp, 6.7044774462985E-01_wp, 6.6838194641483E-06_wp, &
-      & 2.2640318425337E-01_wp, 7.7359681574663E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.8821108711455E-01_wp, &
-      & 8.1178891288545E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.0126387421950E-02_wp, 9.6738367035521E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.9953637089135E-12_wp, 9.2422656035061E-08_wp, 2.2493337765938E-04_wp, &
-      & 4.1001518442525E-02_wp, 8.2747340204614E-01_wp, 1.1163506217946E-06_wp, &
-      & 1.2540172388574E-03_wp, 1.0999576750594E-01_wp, 7.3478924996110E-01_wp, &
-      & 4.5973534870136E-02_wp, 1.7733574164893E-13_wp, 1.2868664921572E-07_wp, &
-      & 6.8690163375128E-03_wp, 6.7958369863349E-01_wp, 7.7071301908717E-07_wp, &
-      & 2.5715775485838E-07_wp, 1.6957699914291E-04_wp, 2.6115927712490E-02_wp, &
-      & 9.8015581415428E-01_wp, 0.0000000000000E+00_wp, 1.5052252044350E-01_wp, &
-      & 6.7503900878048E-01_wp, 2.0966764053284E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.4123874345618E-01_wp, 8.5876125654382E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 3.2995570594716E-04_wp, 1.3239836014058E-01_wp, 3.3638195237351E-01_wp, &
-      & 4.0116925621724E-01_wp, 0.0000000000000E+00_wp, 2.7738482922597E-02_wp, &
-      & 9.7226151707740E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.2379486544581E-01_wp, 7.8289211602208E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.8811788794004E-01_wp, 8.1188211205996E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.5107682180162E-02_wp, &
-      & 9.7489231781984E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.3960579256771E-04_wp, 9.0196670358265E-02_wp, &
-      & 4.5739781308729E-01_wp, 2.9149367395236E-01_wp, 0.0000000000000E+00_wp, &
-      & 5.8317983398498E-12_wp, 1.3182770972301E-06_wp, 1.8538244187819E-02_wp, &
-      & 6.7044774462985E-01_wp, 6.6838194641483E-06_wp, 2.2640318425337E-01_wp, &
-      & 7.7359681574663E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.8821108711455E-01_wp, 8.1178891288545E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.0126387421950E-02_wp, 9.6738367035521E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.9953637089135E-12_wp, &
-      & 9.2422656035061E-08_wp, 2.2493337765938E-04_wp, 4.1001518442525E-02_wp, &
-      & 8.2747340204614E-01_wp, 1.1163506217946E-06_wp, 1.2540172388574E-03_wp, &
-      & 1.0999576750594E-01_wp, 7.3478924996110E-01_wp, 4.5973534870136E-02_wp, &
-      & 1.7733574164893E-13_wp, 1.2868664921572E-07_wp, 6.8690163375128E-03_wp, &
-      & 6.7958369863349E-01_wp, 7.7071301908717E-07_wp, 2.5715775485838E-07_wp, &
-      & 1.6957699914291E-04_wp, 2.6115927712490E-02_wp, 9.8015581415428E-01_wp, &
-      & 0.0000000000000E+00_wp, 1.1619449180297E-01_wp, 7.4292303143376E-01_wp, &
-      & 1.7688691875381E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 4.5511447319703E-02_wp, 9.5448855268030E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 9.2508392559746E-06_wp, &
-      & 7.5824069699182E-02_wp, 4.4951921574350E-01_wp, 3.1887288951654E-01_wp, &
-      & 0.0000000000000E+00_wp, 3.5066919289813E-03_wp, 9.9649330807102E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 4.4395780891660E-02_wp, 8.5383545436310E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 7.1925482699841E-02_wp, &
-      & 9.2807451730016E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.9954258724411E-03_wp, 9.9700457412756E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.0238008000468E-06_wp, 3.8055054539114E-02_wp, 5.9074525520210E-01_wp, &
-      & 1.7718982934717E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 3.4151558259365E-08_wp, 6.5639826011158E-03_wp, 6.7982280802516E-01_wp, &
-      & 2.5898101368240E-07_wp, 9.7140202686718E-02_wp, 9.0285979731328E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 7.1982878187917E-02_wp, 9.2801712181208E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.1772574193346E-03_wp, &
-      & 9.7612947599990E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 3.5689039339356E-13_wp, &
-      & 3.8192206935584E-07_wp, 4.0712983354820E-03_wp, 8.6371381723556E-01_wp, &
-      & 3.5979138804999E-11_wp, 9.7693789150509E-06_wp, 2.8536546460626E-02_wp, &
-      & 8.5530890313171E-01_wp, 6.3404470879011E-03_wp, 0.0000000000000E+00_wp, &
-      & 1.7396779713960E-09_wp, 1.8302935084816E-03_wp, 6.8352702270097E-01_wp, &
-      & 1.6312609722908E-08_wp, 0.0000000000000E+00_wp, 7.9041698936705E-09_wp, &
-      & 4.0780312005162E-04_wp, 1.0060406958243E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.1174800276996E-01_wp, 5.6964871898640E-01_wp, 2.5219928685690E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.4403797218710E-01_wp, &
-      & 7.5596202781290E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 4.8890988223564E-04_wp, 1.4079823595826E-01_wp, &
-      & 3.2239231943401E-01_wp, 4.0957756984420E-01_wp, 0.0000000000000E+00_wp, &
-      & 7.5862834744969E-02_wp, 9.2413716525503E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.5224097067826E-01_wp, &
-      & 7.5747542917585E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.9773509090075E-01_wp, 7.0226490909925E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 7.0607838000571E-02_wp, 9.2939216199943E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.2189803166994E-04_wp, &
-      & 9.8892646451660E-02_wp, 4.3831806676090E-01_wp, 3.0633584406942E-01_wp, &
-      & 0.0000000000000E+00_wp, 1.0892600979524E-09_wp, 1.9452547146752E-05_wp, &
-      & 3.9425621360989E-02_wp, 6.5404367987276E-01_wp, 7.3196915833069E-05_wp, &
-      & 3.3779631811082E-01_wp, 6.6220368188918E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.9783635509721E-01_wp, &
-      & 7.0216364490279E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 9.6336440102884E-03_wp, 9.6786521862972E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.4358117918347E-08_wp, 2.1339725696048E-05_wp, 3.5282099660186E-03_wp, &
-      & 1.0654366986150E-01_wp, 7.6039718337984E-01_wp, 9.5562006186987E-05_wp, &
-      & 9.4981643353880E-03_wp, 1.7700942131591E-01_wp, 6.0914264505196E-01_wp, &
-      & 9.7809437645041E-02_wp, 6.8362324068111E-11_wp, 3.0917858879577E-06_wp, &
-      & 1.8135933744590E-02_wp, 6.7075660296166E-01_wp, 1.3284665444268E-05_wp, &
-      & 2.8388831053016E-13_wp, 6.7329811561295E-08_wp, 9.9935157277430E-04_wp, &
-      & 1.0054489358913E+00_wp, 0.0000000000000E+00_wp], &
-      & [5, 16, 16])
+   real(wp), parameter :: ref(16, 16) = reshape([&
+      & 2.4365306222463E+02_wp, 2.0332338587140E+01_wp, 3.0502619153371E+01_wp, &
+      & 1.8298596791412E+01_wp, 2.0742419322199E+01_wp, 2.0716929307831E+01_wp, &
+      & 1.8190372677731E+01_wp, 3.0488441450911E+01_wp, 4.0457627599127E+01_wp, &
+      & 2.0967433681204E+01_wp, 2.0717596735073E+01_wp, 9.9580698415550E+01_wp, &
+      & 6.1846685567225E+01_wp, 7.1021885273123E+01_wp, 4.0423599454699E+01_wp, &
+      & 1.8347543119346E+02_wp, 2.0332338587140E+01_wp, 3.1822696668068E+00_wp, &
+      & 6.6304723933976E+00_wp, 3.1140882425890E+00_wp, 5.1231960123924E+00_wp, &
+      & 3.2264928164160E+00_wp, 3.1133031099925E+00_wp, 6.6045195385247E+00_wp, &
+      & 7.9287997139231E+00_wp, 3.2692094735311E+00_wp, 3.2265895526420E+00_wp, &
+      & 1.8012665879686E+01_wp, 1.0906617349170E+01_wp, 1.1497231041362E+01_wp, &
+      & 7.9271978729409E+00_wp, 2.3992975724594E+01_wp, 3.0502619153371E+01_wp, &
+      & 6.6304723933976E+00_wp, 1.4581513138206E+01_wp, 6.5569791757550E+00_wp, &
+      & 1.1626599584016E+01_wp, 6.6886761622036E+00_wp, 6.5564027372405E+00_wp, &
+      & 1.4518124333712E+01_wp, 1.6973077732097E+01_wp, 6.7494612462405E+00_wp, &
+      & 6.6888091930108E+00_wp, 3.7235277639546E+01_wp, 2.1774193034488E+01_wp, &
+      & 2.2669077958442E+01_wp, 1.6972811391289E+01_wp, 4.3476182851475E+01_wp, &
+      & 1.8298596791412E+01_wp, 3.1140882425890E+00_wp, 6.5569791757550E+00_wp, &
+      & 3.0476210856053E+00_wp, 5.0902564954875E+00_wp, 3.1571995014269E+00_wp, &
+      & 3.0468556933868E+00_wp, 6.5312738981987E+00_wp, 7.7505874377698E+00_wp, &
+      & 3.1988421451067E+00_wp, 3.1572938054399E+00_wp, 1.7286653842521E+01_wp, &
+      & 1.0253209303737E+01_wp, 1.0801256909450E+01_wp, 7.7490213169745E+00_wp, &
+      & 2.1815226920390E+01_wp, 2.0742419322199E+01_wp, 5.1231960123924E+00_wp, &
+      & 1.1626599584016E+01_wp, 5.0902564954875E+00_wp, 9.4188339482987E+00_wp, &
+      & 5.1535678750056E+00_wp, 5.0900696911622E+00_wp, 1.1573411106197E+01_wp, &
+      & 1.3364030360454E+01_wp, 5.1873221228506E+00_wp, 5.1536397442244E+00_wp, &
+      & 2.9120203955066E+01_wp, 1.6877692257805E+01_wp, 1.7511681863102E+01_wp, &
+      & 1.3363934948055E+01_wp, 3.2885793756667E+01_wp, 2.0716929307831E+01_wp, &
+      & 3.2264928164160E+00_wp, 6.6886761622036E+00_wp, 3.1571995014269E+00_wp, &
+      & 5.1535678750056E+00_wp, 3.2714371494340E+00_wp, 3.1564015650249E+00_wp, &
+      & 6.6625272357290E+00_wp, 8.0408657246332E+00_wp, 3.3148504223411E+00_wp, &
+      & 3.2715354632174E+00_wp, 1.8375751583069E+01_wp, 1.1176495233369E+01_wp, &
+      & 1.1784690045716E+01_wp, 8.0392414215684E+00_wp, 2.4688315344031E+01_wp, &
+      & 1.8190372677731E+01_wp, 3.1133031099925E+00_wp, 6.5564027372405E+00_wp, &
+      & 3.0468556933868E+00_wp, 5.0900696911622E+00_wp, 3.1564015650249E+00_wp, &
+      & 3.0460905284855E+00_wp, 6.5306994015382E+00_wp, 7.7484183050892E+00_wp, &
+      & 3.1980318410700E+00_wp, 3.1564958410302E+00_wp, 1.7273782041288E+01_wp, &
+      & 1.0238064084132E+01_wp, 1.0785125058701E+01_wp, 7.7468526190666E+00_wp, &
+      & 2.1747178438015E+01_wp, 3.0488441450911E+01_wp, 6.6045195385247E+00_wp, &
+      & 1.4518124333712E+01_wp, 6.5312738981987E+00_wp, 1.1573411106197E+01_wp, &
+      & 6.6625272357290E+00_wp, 6.5306994015382E+00_wp, 1.4455069876704E+01_wp, &
+      & 1.6901253376081E+01_wp, 6.7231075524626E+00_wp, 6.6626598183941E+00_wp, &
+      & 3.7083479708919E+01_wp, 2.1697223691340E+01_wp, 2.2589483264101E+01_wp, &
+      & 1.6900988187810E+01_wp, 4.3337080992823E+01_wp, 4.0457627599127E+01_wp, &
+      & 7.9287997139231E+00_wp, 1.6973077732097E+01_wp, 7.7505874377698E+00_wp, &
+      & 1.3364030360454E+01_wp, 8.0408657246332E+00_wp, 7.7484183050892E+00_wp, &
+      & 1.6901253376081E+01_wp, 1.9903312598032E+01_wp, 8.1478434370286E+00_wp, &
+      & 8.0411092346947E+00_wp, 4.3913859005520E+01_wp, 2.5705612403693E+01_wp, &
+      & 2.6926314672038E+01_wp, 1.9897989085535E+01_wp, 5.2296415572987E+01_wp, &
+      & 2.0967433681204E+01_wp, 3.2692094735311E+00_wp, 6.7494612462405E+00_wp, &
+      & 3.1988421451067E+00_wp, 5.1873221228506E+00_wp, 3.3148504223411E+00_wp, &
+      & 3.1980318410700E+00_wp, 6.7231075524626E+00_wp, 8.1478434370286E+00_wp, &
+      & 3.3589365803364E+00_wp, 3.3149502599414E+00_wp, 1.8693867510742E+01_wp, &
+      & 1.1396899314516E+01_wp, 1.2019452289797E+01_wp, 8.1461976917604E+00_wp, &
+      & 2.5207079835493E+01_wp, 2.0717596735073E+01_wp, 3.2265895526420E+00_wp, &
+      & 6.6888091930108E+00_wp, 3.1572938054399E+00_wp, 5.1536397442244E+00_wp, &
+      & 3.2715354632174E+00_wp, 3.1564958410302E+00_wp, 6.6626598183941E+00_wp, &
+      & 8.0411092346947E+00_wp, 3.3149502599414E+00_wp, 3.2716337804517E+00_wp, &
+      & 1.8376503071173E+01_wp, 1.1177031770379E+01_wp, 1.1785261535282E+01_wp, &
+      & 8.0394848828217E+00_wp, 2.4689626643585E+01_wp, 9.9580698415550E+01_wp, &
+      & 1.8012665879686E+01_wp, 3.7235277639546E+01_wp, 1.7286653842521E+01_wp, &
+      & 2.9120203955066E+01_wp, 1.8375751583069E+01_wp, 1.7273782041288E+01_wp, &
+      & 3.7083479708919E+01_wp, 4.3913859005520E+01_wp, 1.8693867510742E+01_wp, &
+      & 1.8376503071173E+01_wp, 9.7300368597444E+01_wp, 5.7050336368043E+01_wp, &
+      & 5.9923299874942E+01_wp, 4.3905285101770E+01_wp, 1.1697722659238E+02_wp, &
+      & 6.1846685567225E+01_wp, 1.0906617349170E+01_wp, 2.1774193034488E+01_wp, &
+      & 1.0253209303737E+01_wp, 1.6877692257805E+01_wp, 1.1176495233369E+01_wp, &
+      & 1.0238064084132E+01_wp, 2.1697223691340E+01_wp, 2.5705612403693E+01_wp, &
+      & 1.1396899314516E+01_wp, 1.1177031770379E+01_wp, 5.7050336368043E+01_wp, &
+      & 3.3659827509442E+01_wp, 3.5934002503412E+01_wp, 2.5688699926209E+01_wp, &
+      & 7.0354767087578E+01_wp, 7.1021885273123E+01_wp, 1.1497231041362E+01_wp, &
+      & 2.2669077958442E+01_wp, 1.0801256909450E+01_wp, 1.7511681863102E+01_wp, &
+      & 1.1784690045716E+01_wp, 1.0785125058701E+01_wp, 2.2589483264101E+01_wp, &
+      & 2.6926314672038E+01_wp, 1.2019452289797E+01_wp, 1.1785261535282E+01_wp, &
+      & 5.9923299874942E+01_wp, 3.5934002503412E+01_wp, 3.8409602775833E+01_wp, &
+      & 2.6908606755692E+01_wp, 7.6809703882464E+01_wp, 4.0423599454699E+01_wp, &
+      & 7.9271978729409E+00_wp, 1.6972811391289E+01_wp, 7.7490213169745E+00_wp, &
+      & 1.3363934948055E+01_wp, 8.0392414215684E+00_wp, 7.7468526190666E+00_wp, &
+      & 1.6900988187810E+01_wp, 1.9897989085535E+01_wp, 8.1461976917604E+00_wp, &
+      & 8.0394848828217E+00_wp, 4.3905285101770E+01_wp, 2.5688699926209E+01_wp, &
+      & 2.6908606755692E+01_wp, 1.9892667009015E+01_wp, 5.2233988011324E+01_wp, &
+      & 1.8347543119346E+02_wp, 2.3992975724594E+01_wp, 4.3476182851475E+01_wp, &
+      & 2.1815226920390E+01_wp, 3.2885793756667E+01_wp, 2.4688315344031E+01_wp, &
+      & 2.1747178438015E+01_wp, 4.3337080992823E+01_wp, 5.2296415572987E+01_wp, &
+      & 2.5207079835493E+01_wp, 2.4689626643585E+01_wp, 1.1697722659238E+02_wp, &
+      & 7.0354767087578E+01_wp, 7.6809703882464E+01_wp, 5.2233988011324E+01_wp, &
+      & 1.5010894587960E+02_wp], [16, 16])
 
    call get_structure(mol, "MB16-43", "01")
    call new_d4s_model(error, d4s, mol)
@@ -900,47 +664,104 @@ subroutine test_gw_d4s_mb01(error)
       call test_failed(error, "D4S model could not be created")
       return
    end if
-   call test_gw_gen(error, mol, d4s, ref, with_cn=.true., with_q=.false.)
+   call test_c6_gen(error, mol, d4s, ref, with_cn=.true., with_q=.false.)
 
-end subroutine test_gw_d4s_mb01
+end subroutine test_c6_d4s_mb01
 
-
-subroutine test_gw_d4_mb02(error)
+subroutine test_c6_d4_mb02(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
 
    type(structure_type) :: mol
    type(d4_model) :: d4
-   real(wp), parameter :: ref(5, 16, 1) = reshape([&
-      & 8.1529926850468E-01_wp, 2.2414425700956E-03_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.0229633690838E+00_wp, &
-      & 2.0291440612814E-03_wp, 4.4863013350169E-10_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.1578430925721E+00_wp, 2.0553787158892E-03_wp, &
-      & 3.1900095597967E-10_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.3687709975145E+00_wp, 8.2192921625604E-03_wp, 5.9806186105627E-08_wp, &
-      & 1.4414431691639E-03_wp, 0.0000000000000E+00_wp, 9.1646421111918E-01_wp, &
-      & 5.3618567538002E-03_wp, 1.7524886555881E-08_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 5.5812105498128E-01_wp, 1.5344013422165E-03_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 7.5659186904499E-01_wp, 2.0800426162236E-03_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 7.7216222381926E-01_wp, &
-      & 2.1228490523027E-03_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 9.9399938189677E-01_wp, 2.8186797641147E-03_wp, &
-      & 7.1776130956295E-10_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 5.5220460179834E-01_wp, 1.5181356707747E-03_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.1425733041093E+00_wp, &
-      & 2.0284312531719E-03_wp, 3.1484305175579E-10_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 8.1572049134917E-01_wp, 6.4067287425100E-03_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.2272138342948E+00_wp, 1.3612868628584E-02_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 8.3285816475829E-01_wp, &
-      & 2.2897159576321E-03_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 7.4607907232618E-01_wp, 2.0511405541139E-03_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.0523038058719E+00_wp, 2.0872155477415E-03_wp, 4.6145584504737E-10_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp], &
-      & [5, 16, 1])
+   real(wp), parameter :: ref(16, 16) = reshape([&
+      & 3.0589395270838E+00_wp, 2.0548666062381E+01_wp, 1.0486006240981E+01_wp, &
+      & 6.5056567344045E+00_wp, 1.4992082319852E+01_wp, 3.0801316359883E+00_wp, &
+      & 3.0579827712864E+00_wp, 3.0577825167623E+00_wp, 2.1537656255928E+01_wp, &
+      & 3.0803284996092E+00_wp, 1.0172957112767E+01_wp, 5.2220400277510E+00_wp, &
+      & 5.0976789500531E+00_wp, 3.0600561665054E+00_wp, 3.0481646087415E+00_wp, &
+      & 2.0549746985773E+01_wp, 2.0548666062381E+01_wp, 1.3851681015795E+02_wp, &
+      & 7.0565183559524E+01_wp, 4.3366575795645E+01_wp, 1.0382773857053E+02_wp, &
+      & 2.0694474784198E+01_wp, 2.0542083265900E+01_wp, 2.0540705448509E+01_wp, &
+      & 1.4602962434315E+02_wp, 2.0695829271052E+01_wp, 6.8403707744864E+01_wp, &
+      & 3.5378883322712E+01_wp, 3.3779518127935E+01_wp, 2.0556348911102E+01_wp, &
+      & 2.0474531058723E+01_wp, 1.3852545717271E+02_wp, 1.0486006240981E+01_wp, &
+      & 7.0565183559524E+01_wp, 3.5978462430120E+01_wp, 2.2210612243768E+01_wp, &
+      & 5.2203292609600E+01_wp, 1.0559559576149E+01_wp, 1.0482685543632E+01_wp, &
+      & 1.0481990502464E+01_wp, 7.4184741679162E+01_wp, 1.0560242848209E+01_wp, &
+      & 3.4889842830742E+01_wp, 1.7979649047208E+01_wp, 1.7349677314061E+01_wp, &
+      & 1.0489881860628E+01_wp, 1.0448608774602E+01_wp, 7.0569262061317E+01_wp, &
+      & 6.5056567344045E+00_wp, 4.3366575795645E+01_wp, 2.2210612243768E+01_wp, &
+      & 1.4330344748644E+01_wp, 2.9585795587556E+01_wp, 6.5476501757141E+00_wp, &
+      & 6.5037608651161E+00_wp, 6.5033640487047E+00_wp, 4.4690011014072E+01_wp, &
+      & 6.5480402728463E+00_wp, 2.1600731051093E+01_wp, 1.0877146737095E+01_wp, &
+      & 1.1511272048731E+01_wp, 6.5078694227322E+00_wp, 6.4843055841691E+00_wp, &
+      & 4.3367198644475E+01_wp, 1.4992082319852E+01_wp, 1.0382773857053E+02_wp, &
+      & 5.2203292609600E+01_wp, 2.9585795587556E+01_wp, 9.4034692488024E+01_wp, &
+      & 1.5118842906512E+01_wp, 1.4986359485625E+01_wp, 1.4985161663310E+01_wp, &
+      & 1.1441184252246E+02_wp, 1.5120020446142E+01_wp, 5.0280957257019E+01_wp, &
+      & 2.7544654796568E+01_wp, 2.1792156965418E+01_wp, 1.4998761497880E+01_wp, &
+      & 1.4927632152271E+01_wp, 1.0384223027605E+02_wp, 3.0801316359883E+00_wp, &
+      & 2.0694474784198E+01_wp, 1.0559559576149E+01_wp, 6.5476501757141E+00_wp, &
+      & 1.5118842906512E+01_wp, 3.1014972488871E+00_wp, 3.0791670470416E+00_wp, &
+      & 3.0789651529940E+00_wp, 2.1697037089362E+01_wp, 3.1016957242694E+00_wp, &
+      & 1.0243880281179E+01_wp, 5.2604271712471E+00_wp, 5.1287635630518E+00_wp, &
+      & 3.0812574175580E+00_wp, 3.0692685012547E+00_wp, 2.0695574926403E+01_wp, &
+      & 3.0579827712864E+00_wp, 2.0542083265900E+01_wp, 1.0482685543632E+01_wp, &
+      & 6.5037608651161E+00_wp, 1.4986359485625E+01_wp, 3.0791670470416E+00_wp, &
+      & 3.0570263691305E+00_wp, 3.0568261886256E+00_wp, 2.1530460722105E+01_wp, &
+      & 3.0793638378966E+00_wp, 1.0169755159019E+01_wp, 5.2203069712509E+00_wp, &
+      & 5.0962755794007E+00_wp, 3.0590989979692E+00_wp, 3.0472118356314E+00_wp, &
+      & 2.0543163321624E+01_wp, 3.0577825167623E+00_wp, 2.0540705448509E+01_wp, &
+      & 1.0481990502464E+01_wp, 6.5033640487047E+00_wp, 1.4985161663310E+01_wp, &
+      & 3.0789651529940E+00_wp, 3.0568261886256E+00_wp, 3.0566260236134E+00_wp, &
+      & 2.1528954655244E+01_wp, 3.0791619286187E+00_wp, 1.0169084971573E+01_wp, &
+      & 5.2199442324981E+00_wp, 5.0959818458034E+00_wp, 3.0588986570565E+00_wp, &
+      & 3.0470124147068E+00_wp, 2.0541785322625E+01_wp, 2.1537656255928E+01_wp, &
+      & 1.4602962434315E+02_wp, 7.4184741679162E+01_wp, 4.4690011014072E+01_wp, &
+      & 1.1441184252246E+02_wp, 2.1697037089362E+01_wp, 2.1530460722105E+01_wp, &
+      & 2.1528954655244E+01_wp, 1.5556225735539E+02_wp, 2.1698517654043E+01_wp, &
+      & 7.1805295866219E+01_wp, 3.7626982953065E+01_wp, 3.4358625569838E+01_wp, &
+      & 2.1546054236631E+01_wp, 2.1456620646243E+01_wp, 1.4604162267121E+02_wp, &
+      & 3.0803284996092E+00_wp, 2.0695829271052E+01_wp, 1.0560242848209E+01_wp, &
+      & 6.5480402728463E+00_wp, 1.5120020446142E+01_wp, 3.1016957242694E+00_wp, &
+      & 3.0793638378966E+00_wp, 3.0791619286187E+00_wp, 2.1698517654043E+01_wp, &
+      & 3.1018942146242E+00_wp, 1.0244539120363E+01_wp, 5.2607837677566E+00_wp, &
+      & 5.1290523228678E+00_wp, 3.0814543661047E+00_wp, 3.0694645453914E+00_wp, &
+      & 2.0696929591790E+01_wp, 1.0172957112767E+01_wp, 6.8403707744864E+01_wp, &
+      & 3.4889842830742E+01_wp, 2.1600731051093E+01_wp, 5.0280957257019E+01_wp, &
+      & 1.0243880281179E+01_wp, 1.0169755159019E+01_wp, 1.0169084971573E+01_wp, &
+      & 7.1805295866219E+01_wp, 1.0244539120363E+01_wp, 3.3841320400868E+01_wp, &
+      & 1.7407271135443E+01_wp, 1.6904472228624E+01_wp, 1.0176694145552E+01_wp, &
+      & 1.0136896928684E+01_wp, 6.8407464235121E+01_wp, 5.2220400277510E+00_wp, &
+      & 3.5378883322712E+01_wp, 1.7979649047208E+01_wp, 1.0877146737095E+01_wp, &
+      & 2.7544654796568E+01_wp, 5.2604271712471E+00_wp, 5.2203069712509E+00_wp, &
+      & 5.2199442324981E+00_wp, 3.7626982953065E+01_wp, 5.2607837677566E+00_wp, &
+      & 1.7407271135443E+01_wp, 9.1050543972585E+00_wp, 8.3876487926031E+00_wp, &
+      & 5.2240626956176E+00_wp, 5.2025224639999E+00_wp, 3.5381660815106E+01_wp, &
+      & 5.0976789500531E+00_wp, 3.3779518127935E+01_wp, 1.7349677314061E+01_wp, &
+      & 1.1511272048731E+01_wp, 2.1792156965418E+01_wp, 5.1287635630518E+00_wp, &
+      & 5.0962755794007E+00_wp, 5.0959818458034E+00_wp, 3.4358625569838E+01_wp, &
+      & 5.1290523228678E+00_wp, 1.6904472228624E+01_wp, 8.3876487926031E+00_wp, &
+      & 9.4043400097466E+00_wp, 5.0993168382139E+00_wp, 5.0818742857664E+00_wp, &
+      & 3.3779053209122E+01_wp, 3.0600561665054E+00_wp, 2.0556348911102E+01_wp, &
+      & 1.0489881860628E+01_wp, 6.5078694227322E+00_wp, 1.4998761497880E+01_wp, &
+      & 3.0812574175580E+00_wp, 3.0590989979692E+00_wp, 3.0588986570565E+00_wp, &
+      & 2.1546054236631E+01_wp, 3.0814543661047E+00_wp, 1.0176694145552E+01_wp, &
+      & 5.2240626956176E+00_wp, 5.0993168382139E+00_wp, 3.0611732876384E+00_wp, &
+      & 3.0492765999282E+00_wp, 2.0557430847157E+01_wp, 3.0481646087415E+00_wp, &
+      & 2.0474531058723E+01_wp, 1.0448608774602E+01_wp, 6.4843055841691E+00_wp, &
+      & 1.4927632152271E+01_wp, 3.0692685012547E+00_wp, 3.0472118356314E+00_wp, &
+      & 3.0470124147068E+00_wp, 2.1456620646243E+01_wp, 3.0694645453914E+00_wp, &
+      & 1.0136896928684E+01_wp, 5.2025224639999E+00_wp, 5.0818742857664E+00_wp, &
+      & 3.0492765999282E+00_wp, 3.0374345431516E+00_wp, 2.0475602210498E+01_wp, &
+      & 2.0549746985773E+01_wp, 1.3852545717271E+02_wp, 7.0569262061317E+01_wp, &
+      & 4.3367198644475E+01_wp, 1.0384223027605E+02_wp, 2.0695574926403E+01_wp, &
+      & 2.0543163321624E+01_wp, 2.0541785322625E+01_wp, 1.4604162267121E+02_wp, &
+      & 2.0696929591790E+01_wp, 6.8407464235121E+01_wp, 3.5381660815106E+01_wp, &
+      & 3.3779053209122E+01_wp, 2.0557430847157E+01_wp, 2.0475602210498E+01_wp, &
+      & 1.3853411065714E+02_wp], [16, 16])
 
    call get_structure(mol, "MB16-43", "02")
    call new_d4_model(error, d4, mol)
@@ -948,106 +769,210 @@ subroutine test_gw_d4_mb02(error)
       call test_failed(error, "D4 model could not be created")
       return
    end if
-   call test_gw_gen(error, mol, d4, ref, with_cn=.false., with_q=.true.)
+   call test_c6_gen(error, mol, d4, ref, with_cn=.true., with_q=.false.)
 
-end subroutine test_gw_d4_mb02
+end subroutine test_c6_d4_mb02
 
-
-subroutine test_gw_d4_eeqbc_mb02(error)
+subroutine test_c6_d4_eeqbc_mb02(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
 
    type(structure_type) :: mol
    type(d4_model) :: d4
-   real(wp), parameter :: ref(5, 16, 1) = reshape([&
-      & 1.2595414807089E+00_wp, 3.4627651498328E-03_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.0254439271401E+00_wp, &
-      & 2.0298475069163E-03_wp, 4.5954321305318E-10_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.0048156894089E+00_wp, 1.8796029452983E-03_wp, &
-      & 3.0506495005117E-10_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.1020354818356E+00_wp, 6.7928862292002E-03_wp, 5.5690274492868E-08_wp, &
-      & 1.1605458622024E-03_wp, 0.0000000000000E+00_wp, 9.4187732431476E-01_wp, &
-      & 5.4832647054101E-03_wp, 1.7870363924972E-08_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 6.9350750294192E-01_wp, 1.9066093885080E-03_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.0650204821510E+00_wp, 2.9279828143293E-03_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.1303254622557E+00_wp, &
-      & 3.1075210134921E-03_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 9.6837394592909E-01_wp, 2.7666277695184E-03_wp, &
-      & 7.1117229823468E-10_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 7.1529148033840E-01_wp, 1.9664984822049E-03_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 9.9541854542085E-01_wp, &
-      & 1.8620015159966E-03_wp, 3.0220664483454E-10_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 8.9906533280080E-01_wp, 6.8945505568332E-03_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.1487780707026E+00_wp, 1.3509553061686E-02_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 1.0926349093356E+00_wp, &
-      & 3.0039011366331E-03_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.1619247510000E+00_wp, 3.1943946238488E-03_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.0447172264156E+00_wp, 2.0679073977604E-03_wp, 4.6816982905992E-10_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp], &
-      & [5, 16, 1])
+   real(wp), parameter :: ref(16, 16) = reshape([&
+      & 1.2156026657142E+01_wp, 4.1402343924060E+01_wp, 3.6189420845850E+01_wp, &
+      & 1.4413122451477E+01_wp, 7.9363454660212E+01_wp, 6.6931465313436E+00_wp, &
+      & 1.0278674874720E+01_wp, 1.0908943183589E+01_wp, 5.9926488143458E+01_wp, &
+      & 6.9033870148734E+00_wp, 3.5850972810588E+01_wp, 8.2075791542766E+01_wp, &
+      & 1.1404326642696E+01_wp, 1.0545185917126E+01_wp, 1.1213912731798E+01_wp, &
+      & 4.2180500398191E+01_wp, 4.1402343924060E+01_wp, 1.4212029173886E+02_wp, &
+      & 1.2195973748506E+02_wp, 5.0592603884725E+01_wp, 2.6138336284475E+02_wp, &
+      & 2.2796260854035E+01_wp, 3.5008250989373E+01_wp, 3.7154888704496E+01_wp, &
+      & 2.0153628056277E+02_wp, 2.3512321212520E+01_wp, 1.2081915460321E+02_wp, &
+      & 2.6517472473133E+02_wp, 4.0430288847284E+01_wp, 3.5915963858757E+01_wp, &
+      & 3.8193587818724E+01_wp, 1.4479144062777E+02_wp, 3.6189420845850E+01_wp, &
+      & 1.2195973748506E+02_wp, 1.0967843515703E+02_wp, 4.1299523432576E+01_wp, &
+      & 2.5072577930408E+02_wp, 1.9926009002573E+01_wp, 3.0600401041433E+01_wp, &
+      & 3.2476757989210E+01_wp, 1.8223328912139E+02_wp, 2.0551910997682E+01_wp, &
+      & 1.0865270859060E+02_wp, 2.7008715451537E+02_wp, 3.2317538574875E+01_wp, &
+      & 3.1393824792938E+01_wp, 3.3384675653146E+01_wp, 1.2425196904545E+02_wp, &
+      & 1.4413122451477E+01_wp, 5.0592603884725E+01_wp, 4.1299523432576E+01_wp, &
+      & 1.9215010614038E+01_wp, 8.3343780824688E+01_wp, 7.9359105785817E+00_wp, &
+      & 1.2187189431772E+01_wp, 1.2934484133342E+01_wp, 6.7858401260735E+01_wp, &
+      & 8.1851879056919E+00_wp, 4.0913285058411E+01_wp, 8.0395391574922E+01_wp, &
+      & 1.5798983168366E+01_wp, 1.2503185472025E+01_wp, 1.3296079543280E+01_wp, &
+      & 5.1543491160448E+01_wp, 7.9363454660212E+01_wp, 2.6138336284475E+02_wp, &
+      & 2.5072577930408E+02_wp, 8.3343780824688E+01_wp, 6.3011538720305E+02_wp, &
+      & 4.3697767885557E+01_wp, 6.7106725774379E+01_wp, 7.1221579399298E+01_wp, &
+      & 4.1967481919064E+02_wp, 4.5070371907658E+01_wp, 2.4838096024201E+02_wp, &
+      & 7.4820567765100E+02_wp, 6.3645801767398E+01_wp, 6.8846705261675E+01_wp, &
+      & 7.3212644209756E+01_wp, 2.6629605950086E+02_wp, 6.6931465313436E+00_wp, &
+      & 2.2796260854035E+01_wp, 1.9926009002573E+01_wp, 7.9359105785817E+00_wp, &
+      & 4.3697767885557E+01_wp, 3.6852675428871E+00_wp, 5.6594707320848E+00_wp, &
+      & 6.0064984463461E+00_wp, 3.2995712955049E+01_wp, 3.8010266147265E+00_wp, &
+      & 1.9739658449292E+01_wp, 4.5191189108571E+01_wp, 6.2792581378575E+00_wp, &
+      & 5.8062125507199E+00_wp, 6.1744156393016E+00_wp, 2.3224716257480E+01_wp, &
+      & 1.0278674874720E+01_wp, 3.5008250989373E+01_wp, 3.0600401041433E+01_wp, &
+      & 1.2187189431772E+01_wp, 6.7106725774379E+01_wp, 5.6594707320848E+00_wp, &
+      & 8.6912574445630E+00_wp, 9.2241884106946E+00_wp, 5.0671564433305E+01_wp, &
+      & 5.8372421072765E+00_wp, 3.0314222225396E+01_wp, 6.9400174921276E+01_wp, &
+      & 9.6430658661404E+00_wp, 8.9166090691259E+00_wp, 9.4820590884368E+00_wp, &
+      & 3.5666230576358E+01_wp, 1.0908943183589E+01_wp, 3.7154888704496E+01_wp, &
+      & 3.2476757989210E+01_wp, 1.2934484133342E+01_wp, 7.1221579399298E+01_wp, &
+      & 6.0064984463461E+00_wp, 9.2241884106946E+00_wp, 9.7897976649190E+00_wp, &
+      & 5.3778645999014E+01_wp, 6.1951704157655E+00_wp, 3.2173031245973E+01_wp, &
+      & 7.3655658377658E+01_wp, 1.0234359869487E+01_wp, 9.4633581576367E+00_wp, &
+      & 1.0063480469998E+01_wp, 3.7853214317269E+01_wp, 5.9926488143458E+01_wp, &
+      & 2.0153628056277E+02_wp, 1.8223328912139E+02_wp, 6.7858401260735E+01_wp, &
+      & 4.1967481919064E+02_wp, 3.2995712955049E+01_wp, 5.0671564433305E+01_wp, &
+      & 5.3778645999014E+01_wp, 3.0298911322870E+02_wp, 3.4032151439340E+01_wp, &
+      & 1.8052902040909E+02_wp, 4.5506802237240E+02_wp, 5.2979201580649E+01_wp, &
+      & 5.1985404166741E+01_wp, 5.5282077550320E+01_wp, 2.0532415213849E+02_wp, &
+      & 6.9033870148734E+00_wp, 2.3512321212520E+01_wp, 2.0551910997682E+01_wp, &
+      & 8.1851879056919E+00_wp, 4.5070371907658E+01_wp, 3.8010266147265E+00_wp, &
+      & 5.8372421072765E+00_wp, 6.1951704157655E+00_wp, 3.4032151439340E+01_wp, &
+      & 3.9204218303621E+00_wp, 2.0359706929878E+01_wp, 4.6610703443867E+01_wp, &
+      & 6.4764978458080E+00_wp, 5.9885932782931E+00_wp, 6.3683621072958E+00_wp, &
+      & 2.3954234960372E+01_wp, 3.5850972810588E+01_wp, 1.2081915460321E+02_wp, &
+      & 1.0865270859060E+02_wp, 4.0913285058411E+01_wp, 2.4838096024201E+02_wp, &
+      & 1.9739658449292E+01_wp, 3.0314222225396E+01_wp, 3.2173031245973E+01_wp, &
+      & 1.8052902040909E+02_wp, 2.0359706929878E+01_wp, 1.0763657474846E+02_wp, &
+      & 2.6756126548850E+02_wp, 3.2015300857201E+01_wp, 3.1100225777751E+01_wp, &
+      & 3.3072457949227E+01_wp, 1.2308994892429E+02_wp, 8.2075791542766E+01_wp, &
+      & 2.6517472473133E+02_wp, 2.7008715451537E+02_wp, 8.0395391574922E+01_wp, &
+      & 7.4820567765100E+02_wp, 4.5191189108571E+01_wp, 6.9400174921276E+01_wp, &
+      & 7.3655658377658E+01_wp, 4.5506802237240E+02_wp, 4.6610703443867E+01_wp, &
+      & 2.6756126548850E+02_wp, 1.0202897148955E+03_wp, 6.0124141426046E+01_wp, &
+      & 7.1199620198696E+01_wp, 7.5714770106488E+01_wp, 2.7015867997631E+02_wp, &
+      & 1.1404326642696E+01_wp, 4.0430288847284E+01_wp, 3.2317538574875E+01_wp, &
+      & 1.5798983168366E+01_wp, 6.3645801767398E+01_wp, 6.2792581378575E+00_wp, &
+      & 9.6430658661404E+00_wp, 1.0234359869487E+01_wp, 5.2979201580649E+01_wp, &
+      & 6.4764978458080E+00_wp, 3.2015300857201E+01_wp, 6.0124141426046E+01_wp, &
+      & 1.3153433454737E+01_wp, 9.8930964943392E+00_wp, 1.0520470820207E+01_wp, &
+      & 4.1190175553708E+01_wp, 1.0545185917126E+01_wp, 3.5915963858757E+01_wp, &
+      & 3.1393824792938E+01_wp, 1.2503185472025E+01_wp, 6.8846705261675E+01_wp, &
+      & 5.8062125507199E+00_wp, 8.9166090691259E+00_wp, 9.4633581576367E+00_wp, &
+      & 5.1985404166741E+01_wp, 5.9885932782931E+00_wp, 3.1100225777751E+01_wp, &
+      & 7.1199620198696E+01_wp, 9.8930964943392E+00_wp, 9.1478037325146E+00_wp, &
+      & 9.7279150458067E+00_wp, 3.6591003896408E+01_wp, 1.1213912731798E+01_wp, &
+      & 3.8193587818724E+01_wp, 3.3384675653146E+01_wp, 1.3296079543280E+01_wp, &
+      & 7.3212644209756E+01_wp, 6.1744156393016E+00_wp, 9.4820590884368E+00_wp, &
+      & 1.0063480469998E+01_wp, 5.5282077550320E+01_wp, 6.3683621072958E+00_wp, &
+      & 3.3072457949227E+01_wp, 7.5714770106488E+01_wp, 1.0520470820207E+01_wp, &
+      & 9.7279150458067E+00_wp, 1.0344814329813E+01_wp, 3.8911435766800E+01_wp, &
+      & 4.2180500398191E+01_wp, 1.4479144062777E+02_wp, 1.2425196904545E+02_wp, &
+      & 5.1543491160448E+01_wp, 2.6629605950086E+02_wp, 2.3224716257480E+01_wp, &
+      & 3.5666230576358E+01_wp, 3.7853214317269E+01_wp, 2.0532415213849E+02_wp, &
+      & 2.3954234960372E+01_wp, 1.2308994892429E+02_wp, 2.7015867997631E+02_wp, &
+      & 4.1190175553708E+01_wp, 3.6591003896408E+01_wp, 3.8911435766800E+01_wp, &
+      & 1.4751279372258E+02_wp], [16, 16])
 
    call get_structure(mol, "MB16-43", "02")
+   call new_d4_model(error, d4, mol)
    call new_d4_model(error, d4, mol, qmod=d4_qmod%eeqbc)
    if (allocated(error)) then 
       call test_failed(error, "D4 model could not be created")
       return
    end if
-   call test_gw_gen(error, mol, d4, ref, with_cn=.false., with_q=.true.)
+   call test_c6_gen(error, mol, d4, ref, with_cn=.false., with_q=.true.)
 
-end subroutine test_gw_d4_eeqbc_mb02
+end subroutine test_c6_d4_eeqbc_mb02
 
-
-subroutine test_gw_d4_mb03(error)
+subroutine test_c6_d4_mb03(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
 
    type(structure_type) :: mol
    type(d4_model) :: d4
-   real(wp), parameter :: ref(7, 16, 1) = reshape([&
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 3.9504240794198E-09_wp, &
-      & 1.0097386820563E-02_wp, 9.3220073517801E-01_wp, 2.5639475147259E-02_wp, &
-      & 0.0000000000000E+00_wp, 1.4797717135069E-11_wp, 1.9052325554662E-04_wp, &
-      & 1.1116141991349E+00_wp, 2.9351813145404E-03_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 5.3735027174640E-03_wp, &
-      & 8.8839284731689E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 9.7753605500113E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 9.8036041832883E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.2906805265616E-09_wp, 9.9812405470369E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 3.9706733315821E-14_wp, &
-      & 3.4070161345981E-05_wp, 1.0390095052930E+00_wp, 1.4775589359887E-04_wp, &
-      & 0.0000000000000E+00_wp, 1.4709587472355E-03_wp, 8.7779708361772E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 4.9950676848882E-03_wp, &
-      & 8.2586385264927E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 4.7331797500540E-03_wp, 7.8936056984439E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 6.1261133783377E-04_wp, 1.1351788724746E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.4636823892691E-06_wp, 1.0081631910738E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.5989624842058E-05_wp, 1.0653935240443E+00_wp, 7.4688541496264E-05_wp, &
-      & 0.0000000000000E+00_wp, 9.7208858575852E-03_wp, 5.7638169663657E-01_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 5.8433000707751E-10_wp, &
-      & 9.6868781982789E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.8478831017041E-04_wp, 9.0297474706410E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp], &
-      & [7, 16, 1])
+   real(wp), parameter :: ref(16, 16) = reshape([&
+      & 2.6969645804632E+01_wp, 2.8729803918609E+01_wp, 8.0783557426273E+00_wp, &
+      & 1.2572598284646E+01_wp, 3.9383726731882E+01_wp, 6.0100611314024E+01_wp, &
+      & 2.8877446590256E+01_wp, 7.9285493229103E+00_wp, 7.5097624231199E+00_wp, &
+      & 7.1772575509757E+00_wp, 1.9756649427858E+01_wp, 6.3114791359146E+01_wp, &
+      & 2.9607901769799E+01_wp, 5.3279952989770E+00_wp, 3.4651507628618E+01_wp, &
+      & 8.1388552398630E+00_wp, 2.8729803918609E+01_wp, 3.0858718804005E+01_wp, &
+      & 8.5314526128999E+00_wp, 1.3158527195522E+01_wp, 4.0242276058964E+01_wp, &
+      & 6.2518208475630E+01_wp, 3.0769885934381E+01_wp, 8.3738757317567E+00_wp, &
+      & 7.9309682052198E+00_wp, 7.5798206446138E+00_wp, 2.1471517618889E+01_wp, &
+      & 6.6436238381645E+01_wp, 3.1548229972467E+01_wp, 5.6258043424413E+00_wp, &
+      & 3.4923486847229E+01_wp, 8.5961975589899E+00_wp, 8.0783557426273E+00_wp, &
+      & 8.5314526128999E+00_wp, 2.4429152644641E+00_wp, 3.8470627309562E+00_wp, &
+      & 1.2418251750013E+01_wp, 1.8522898371215E+01_wp, 8.6470455821784E+00_wp, &
+      & 2.3973918803547E+00_wp, 2.2709711896641E+00_wp, 2.1704185011555E+00_wp, &
+      & 5.7906292579429E+00_wp, 1.9170869616128E+01_wp, 8.8657656755301E+00_wp, &
+      & 1.6115591315647E+00_wp, 1.1136757306622E+01_wp, 2.4609116715906E+00_wp, &
+      & 1.2572598284646E+01_wp, 1.3158527195522E+01_wp, 3.8470627309562E+00_wp, &
+      & 6.1873811861492E+00_wp, 2.1045559351132E+01_wp, 3.0123412184969E+01_wp, &
+      & 1.3450271401073E+01_wp, 3.7748067440421E+00_wp, 3.5762880002650E+00_wp, &
+      & 3.4179332169982E+00_wp, 8.7894143888807E+00_wp, 3.0447639291352E+01_wp, &
+      & 1.3790466532352E+01_wp, 2.5387769376831E+00_wp, 1.9680032604563E+01_wp, &
+      & 3.8746391243000E+00_wp, 3.9383726731882E+01_wp, 4.0242276058964E+01_wp, &
+      & 1.2418251750013E+01_wp, 2.1045559351132E+01_wp, 8.0792669914257E+01_wp, &
+      & 1.0524757517715E+02_wp, 4.2068874980499E+01_wp, 1.2180230990667E+01_wp, &
+      & 1.1544195337928E+01_wp, 1.1032977672474E+01_wp, 2.5675572843387E+01_wp, &
+      & 1.0047223990865E+02_wp, 4.3132752418890E+01_wp, 8.2028913059178E+00_wp, &
+      & 8.3004740679372E+01_wp, 1.2500821517587E+01_wp, 6.0100611314024E+01_wp, &
+      & 6.2518208475630E+01_wp, 1.8522898371215E+01_wp, 3.0123412184969E+01_wp, &
+      & 1.0524757517715E+02_wp, 1.4754968408298E+02_wp, 6.4275900488174E+01_wp, &
+      & 1.8173467936826E+01_wp, 1.7219167833650E+01_wp, 1.6456702330152E+01_wp, &
+      & 4.1319144188437E+01_wp, 1.4726172884744E+02_wp, 6.5901567272212E+01_wp, &
+      & 1.2226230276259E+01_wp, 1.0042992019072E+02_wp, 1.8653608543109E+01_wp, &
+      & 2.8877446590256E+01_wp, 3.0769885934381E+01_wp, 8.6470455821784E+00_wp, &
+      & 1.3450271401073E+01_wp, 4.2068874980499E+01_wp, 6.4275900488174E+01_wp, &
+      & 3.0920640741304E+01_wp, 8.4867269265489E+00_wp, 8.0384251534349E+00_wp, &
+      & 7.6825133853359E+00_wp, 2.1168508106272E+01_wp, 6.7543056296917E+01_wp, &
+      & 3.1702779636090E+01_wp, 5.7030141029870E+00_wp, 3.6962950298764E+01_wp, &
+      & 8.7118494250596E+00_wp, 7.9285493229103E+00_wp, 8.3738757317567E+00_wp, &
+      & 2.3973918803547E+00_wp, 3.7748067440421E+00_wp, 1.2180230990667E+01_wp, &
+      & 1.8173467936826E+01_wp, 8.4867269265489E+00_wp, 2.3527194049706E+00_wp, &
+      & 2.2286519594791E+00_wp, 2.1299730839455E+00_wp, 5.6843960534634E+00_wp, &
+      & 1.8812501010282E+01_wp, 8.7013919729876E+00_wp, 1.5815237509997E+00_wp, &
+      & 1.0919772339795E+01_wp, 2.4150564158072E+00_wp, 7.5097624231199E+00_wp, &
+      & 7.9309682052198E+00_wp, 2.2709711896641E+00_wp, 3.5762880002650E+00_wp, &
+      & 1.1544195337928E+01_wp, 1.7219167833650E+01_wp, 8.0384251534349E+00_wp, &
+      & 2.2286519594791E+00_wp, 2.1111293622441E+00_wp, 2.0176540534750E+00_wp, &
+      & 5.3830571387835E+00_wp, 1.7821531942660E+01_wp, 8.2417506804364E+00_wp, &
+      & 1.4981298823014E+00_wp, 1.0352898443990E+01_wp, 2.2877009236808E+00_wp, &
+      & 7.1772575509757E+00_wp, 7.5798206446138E+00_wp, 2.1704185011555E+00_wp, &
+      & 3.4179332169982E+00_wp, 1.1032977672474E+01_wp, 1.6456702330152E+01_wp, &
+      & 7.6825133853359E+00_wp, 2.1299730839455E+00_wp, 2.0176540534750E+00_wp, &
+      & 1.9283175881762E+00_wp, 5.1447273217295E+00_wp, 1.7032428915733E+01_wp, &
+      & 7.8768364100925E+00_wp, 1.4317965486738E+00_wp, 9.8943978385702E+00_wp, &
+      & 2.1864075234916E+00_wp, 1.9756649427858E+01_wp, 2.1471517618889E+01_wp, &
+      & 5.7906292579429E+00_wp, 8.7894143888807E+00_wp, 2.5675572843387E+01_wp, &
+      & 4.1319144188437E+01_wp, 2.1168508106272E+01_wp, 5.6843960534634E+00_wp, &
+      & 5.3830571387835E+00_wp, 5.1447273217295E+00_wp, 1.5194417412576E+01_wp, &
+      & 4.4825188609896E+01_wp, 2.1704001718253E+01_wp, 3.8172825287704E+00_wp, &
+      & 2.1539554554163E+01_wp, 5.8355457277839E+00_wp, 6.3114791359146E+01_wp, &
+      & 6.6436238381645E+01_wp, 1.9170869616128E+01_wp, 3.0447639291352E+01_wp, &
+      & 1.0047223990865E+02_wp, 1.4726172884744E+02_wp, 6.7543056296917E+01_wp, &
+      & 1.8812501010282E+01_wp, 1.7821531942660E+01_wp, 1.7032428915733E+01_wp, &
+      & 4.4825188609896E+01_wp, 1.5096768893659E+02_wp, 6.9251466330288E+01_wp, &
+      & 1.2648593650528E+01_wp, 9.1879170429485E+01_wp, 1.9310583681271E+01_wp, &
+      & 2.9607901769799E+01_wp, 3.1548229972467E+01_wp, 8.8657656755301E+00_wp, &
+      & 1.3790466532352E+01_wp, 4.3132752418890E+01_wp, 6.5901567272212E+01_wp, &
+      & 3.1702779636090E+01_wp, 8.7013919729876E+00_wp, 8.2417506804364E+00_wp, &
+      & 7.8768364100925E+00_wp, 2.1704001718253E+01_wp, 6.9251466330288E+01_wp, &
+      & 3.2504702769580E+01_wp, 5.8472671394681E+00_wp, 3.7897574429130E+01_wp, &
+      & 8.9322087944904E+00_wp, 5.3279952989770E+00_wp, 5.6258043424413E+00_wp, &
+      & 1.6115591315647E+00_wp, 2.5387769376831E+00_wp, 8.2028913059178E+00_wp, &
+      & 1.2226230276259E+01_wp, 5.7030141029870E+00_wp, 1.5815237509997E+00_wp, &
+      & 1.4981298823014E+00_wp, 1.4317965486738E+00_wp, 3.8172825287704E+00_wp, &
+      & 1.2648593650528E+01_wp, 5.8472671394681E+00_wp, 1.0631312285249E+00_wp, &
+      & 7.3621267055024E+00_wp, 1.6234254583398E+00_wp, 3.4651507628618E+01_wp, &
+      & 3.4923486847229E+01_wp, 1.1136757306622E+01_wp, 1.9680032604563E+01_wp, &
+      & 8.3004740679372E+01_wp, 1.0042992019072E+02_wp, 3.6962950298764E+01_wp, &
+      & 1.0919772339795E+01_wp, 1.0352898443990E+01_wp, 9.8943978385702E+00_wp, &
+      & 2.1539554554163E+01_wp, 9.1879170429485E+01_wp, 3.7897574429130E+01_wp, &
+      & 7.3621267055024E+00_wp, 9.3031746769708E+01_wp, 1.1206049984339E+01_wp, &
+      & 8.1388552398630E+00_wp, 8.5961975589899E+00_wp, 2.4609116715906E+00_wp, &
+      & 3.8746391243000E+00_wp, 1.2500821517587E+01_wp, 1.8653608543109E+01_wp, &
+      & 8.7118494250596E+00_wp, 2.4150564158072E+00_wp, 2.2877009236808E+00_wp, &
+      & 2.1864075234916E+00_wp, 5.8355457277839E+00_wp, 1.9310583681271E+01_wp, &
+      & 8.9322087944904E+00_wp, 1.6234254583398E+00_wp, 1.1206049984339E+01_wp, &
+      & 2.4790453596084E+00_wp], [16, 16])
 
    call get_structure(mol, "MB16-43", "03")
    call new_d4_model(error, d4, mol)
@@ -1055,12 +980,11 @@ subroutine test_gw_d4_mb03(error)
       call test_failed(error, "D4 model could not be created")
       return
    end if
-   call test_gw_gen(error, mol, d4, ref, with_cn=.true., with_q=.true.)
+   call test_c6_gen(error, mol, d4, ref, with_cn=.true., with_q=.true.)
 
-end subroutine test_gw_d4_mb03
+end subroutine test_c6_d4_mb03
 
-
-subroutine test_dgw_d4_mb04(error)
+subroutine test_dc6_d4_mb04(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -1074,12 +998,11 @@ subroutine test_dgw_d4_mb04(error)
       call test_failed(error, "D4 model could not be created")
       return
    end if
-   call test_dgw_gen(error, mol, d4, with_cn=.true., with_q=.false.)
+   call test_dc6_gen(error, mol, d4, with_cn=.true., with_q=.false.)
 
-end subroutine test_dgw_d4_mb04
+end subroutine test_dc6_d4_mb04
 
-
-subroutine test_dgw_d4s_mb04(error)
+subroutine test_dc6_d4s_mb04(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -1093,12 +1016,11 @@ subroutine test_dgw_d4s_mb04(error)
       call test_failed(error, "D4S model could not be created")
       return
    end if
-   call test_dgw_gen(error, mol, d4s, with_cn=.true., with_q=.false.)
+   call test_dc6_gen(error, mol, d4s, with_cn=.true., with_q=.false.)
 
-end subroutine test_dgw_d4s_mb04
+end subroutine test_dc6_d4s_mb04
 
-
-subroutine test_dgw_d4_mb05(error)
+subroutine test_dc6_d4_mb05(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -1112,11 +1034,11 @@ subroutine test_dgw_d4_mb05(error)
       call test_failed(error, "D4 model could not be created")
       return
    end if
-   call test_dgw_gen(error, mol, d4, with_cn=.false., with_q=.true.)
+   call test_dc6_gen(error, mol, d4, with_cn=.false., with_q=.true.)
 
-end subroutine test_dgw_d4_mb05
+end subroutine test_dc6_d4_mb05
 
-subroutine test_dgw_d4s_mb05(error)
+subroutine test_dc6_d4s_mb05(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -1130,12 +1052,11 @@ subroutine test_dgw_d4s_mb05(error)
       call test_failed(error, "D4S model could not be created")
       return
    end if
-   call test_dgw_gen(error, mol, d4s, with_cn=.false., with_q=.true.)
+   call test_dc6_gen(error, mol, d4s, with_cn=.false., with_q=.true.)
 
-end subroutine test_dgw_d4s_mb05
+end subroutine test_dc6_d4s_mb05
 
-
-subroutine test_dgw_d4s_eeqbc_mb05(error)
+subroutine test_dc6_d4s_eeqbc_mb05(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -1149,12 +1070,11 @@ subroutine test_dgw_d4s_eeqbc_mb05(error)
       call test_failed(error, "D4S model could not be created")
       return
    end if
-   call test_dgw_gen(error, mol, d4s, with_cn=.false., with_q=.true.)
+   call test_dc6_gen(error, mol, d4s, with_cn=.false., with_q=.true.)
 
-end subroutine test_dgw_d4s_eeqbc_mb05
+end subroutine test_dc6_d4s_eeqbc_mb05
 
-
-subroutine test_dgw_d4_mb06(error)
+subroutine test_dc6_d4_mb06(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -1168,11 +1088,11 @@ subroutine test_dgw_d4_mb06(error)
       call test_failed(error, "D4 model could not be created")
       return
    end if
-   call test_dgw_gen(error, mol, d4, with_cn=.true., with_q=.true.)
+   call test_dc6_gen(error, mol, d4, with_cn=.true., with_q=.true.)
 
-end subroutine test_dgw_d4_mb06
+end subroutine test_dc6_d4_mb06
 
-subroutine test_dgw_d4s_mb06(error)
+subroutine test_dc6_d4s_mb06(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -1186,12 +1106,11 @@ subroutine test_dgw_d4s_mb06(error)
       call test_failed(error, "D4S model could not be created")
       return
    end if
-   call test_dgw_gen(error, mol, d4s, with_cn=.true., with_q=.true.)
+   call test_dc6_gen(error, mol, d4s, with_cn=.true., with_q=.true.)
 
-end subroutine test_dgw_d4s_mb06
+end subroutine test_dc6_d4s_mb06
 
-
-subroutine test_gw_d4_mb07(error)
+subroutine test_c6_d4_mb07(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -1203,46 +1122,93 @@ subroutine test_gw_d4_mb07(error)
       & 8.34803229863654E-2_wp,-3.62667644019899E-1_wp, 3.64142434058147E-1_wp, &
       & 3.34644499696670E-1_wp,-4.69889877462762E-1_wp,-1.89224201365947E-1_wp, &
       & 4.53790045287620E-1_wp]
-   real(wp), parameter :: ref(7, 16, 1) = reshape([&
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 4.0693983485343E-09_wp, &
-      & 4.1016483181479E-02_wp, 1.0950348404655E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 8.2493063323491E-08_wp, &
-      & 6.2778502874922E-02_wp, 7.1426034737421E-01_wp, 9.0944083534497E-07_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.7678536584132E-03_wp, &
-      & 4.5688574935307E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 4.8156277656763E-03_wp, 5.0705021724268E-01_wp, 2.6271362451520E-03_wp, &
-      & 3.8726296078651E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 6.2939729329860E-13_wp, 1.0411557228148E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 4.9029610641780E-05_wp, &
-      & 3.4343632275771E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 1.0798558970910E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.3113423827832E-02_wp, 3.8190728936215E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 5.2050674938049E-08_wp, &
-      & 4.0261160521426E-02_wp, 9.1473850489949E-01_wp, 6.4613435497592E-04_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 1.2249110023524E-09_wp, 1.0367677493894E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 4.1505834538896E-02_wp, 3.4418284333043E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 2.5562876550469E-03_wp, &
-      & 4.2019468171339E-01_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 2.6236585470333E-03_wp, 4.4567473952930E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 2.9600876599811E-05_wp, 5.4850578980763E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 8.5241700290816E-09_wp, 1.5557301075470E-02_wp, &
-      & 9.9022177224599E-01_wp, 3.7155688096309E-02_wp, 0.0000000000000E+00_wp, &
-      & 7.0488497407158E-06_wp, 3.5717430467401E-01_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, 0.0000000000000E+00_wp, &
-      & 0.0000000000000E+00_wp], &
-      & [7, 16, 1])
+   real(wp), parameter :: ref(16, 16) = reshape([&
+      & 2.5899776752056E+01_wp, 2.1718975287903E+01_wp, 4.0896559404825E+00_wp, &
+      & 1.9068415125987E+01_wp, 2.3793938067778E+01_wp, 3.0452162987514E+01_wp, &
+      & 5.0890472676690E+01_wp, 3.4184801377206E+01_wp, 2.9794164793817E+01_wp, &
+      & 5.0038725736932E+01_wp, 3.1096288315400E+01_wp, 3.7613777716825E+00_wp, &
+      & 3.9882410743378E+00_wp, 4.8634793174522E+01_wp, 2.4997216709159E+01_wp, &
+      & 3.1670568222466E+00_wp, 2.1718975287903E+01_wp, 1.8511876415478E+01_wp, &
+      & 3.4348560517258E+00_wp, 1.6416126383445E+01_wp, 1.9955717709287E+01_wp, &
+      & 2.5580529446023E+01_wp, 4.1460242401148E+01_wp, 2.8711434912189E+01_wp, &
+      & 2.4534366589169E+01_wp, 4.0232199445588E+01_wp, 2.6113343013771E+01_wp, &
+      & 3.1591367921103E+00_wp, 3.3496939128841E+00_wp, 4.0854373962435E+01_wp, &
+      & 2.1287944173968E+01_wp, 2.6604014464326E+00_wp, 4.0896559404825E+00_wp, &
+      & 3.4348560517258E+00_wp, 6.4613960289572E-01_wp, 3.0193840734568E+00_wp, &
+      & 3.7572241617445E+00_wp, 4.8113918184410E+00_wp, 7.9897749151934E+00_wp, &
+      & 5.4009811476696E+00_wp, 4.6856517803282E+00_wp, 7.8256165209907E+00_wp, &
+      & 4.9128723609097E+00_wp, 5.9427366784289E-01_wp, 6.3011722860587E-01_wp, &
+      & 7.6842179141693E+00_wp, 3.9552290087112E+00_wp, 5.0038977112109E-01_wp, &
+      & 1.9068415125987E+01_wp, 1.6416126383445E+01_wp, 3.0193840734568E+00_wp, &
+      & 1.4653130435190E+01_wp, 1.7521926999029E+01_wp, 2.2488882972412E+01_wp, &
+      & 3.5652597710167E+01_wp, 2.5238571136210E+01_wp, 2.1242519514252E+01_wp, &
+      & 3.4196881867623E+01_wp, 2.2952234544006E+01_wp, 2.7770138595030E+00_wp, &
+      & 2.9445321791501E+00_wp, 3.5916746334507E+01_wp, 1.8876211586780E+01_wp, &
+      & 2.3388667861345E+00_wp, 2.3793938067778E+01_wp, 1.9955717709287E+01_wp, &
+      & 3.7572241617445E+00_wp, 1.7521926999029E+01_wp, 2.1859348620277E+01_wp, &
+      & 2.7976875373198E+01_wp, 4.6738350872009E+01_wp, 3.1406055614332E+01_wp, &
+      & 2.7366044676824E+01_wp, 4.5948203012455E+01_wp, 2.8568548657463E+01_wp, &
+      & 3.4556303884227E+00_wp, 3.6640530770944E+00_wp, 4.4681540401234E+01_wp, &
+      & 2.2967987820257E+01_wp, 2.9096243152442E+00_wp, 3.0452162987514E+01_wp, &
+      & 2.5580529446023E+01_wp, 4.8113918184410E+00_wp, 2.2488882972412E+01_wp, &
+      & 2.7976875373198E+01_wp, 3.5827458959970E+01_wp, 5.9469834950904E+01_wp, &
+      & 4.0217681198927E+01_wp, 3.4880771776963E+01_wp, 5.8234629326369E+01_wp, &
+      & 3.6582969286005E+01_wp, 4.4251790562564E+00_wp, 4.6920836370245E+00_wp, &
+      & 5.7219618191610E+01_wp, 2.9456279627371E+01_wp, 3.7260931204162E+00_wp, &
+      & 5.0890472676690E+01_wp, 4.1460242401148E+01_wp, 7.9897749151934E+00_wp, &
+      & 3.5652597710167E+01_wp, 4.6738350872009E+01_wp, 5.9469834950904E+01_wp, &
+      & 1.0713531598689E+02_wp, 6.6785267065801E+01_wp, 6.1391355088361E+01_wp, &
+      & 1.0946639476652E+02_wp, 6.0774463131515E+01_wp, 7.3484447367073E+00_wp, &
+      & 7.7915601482861E+00_wp, 9.4978522631689E+01_wp, 4.7586719998488E+01_wp, &
+      & 6.1849272739308E+00_wp, 3.4184801377206E+01_wp, 2.8711434912189E+01_wp, &
+      & 5.4009811476696E+00_wp, 2.5238571136210E+01_wp, 3.1406055614332E+01_wp, &
+      & 4.0217681198927E+01_wp, 6.6785267065801E+01_wp, 4.5145967259725E+01_wp, &
+      & 3.9166628211263E+01_wp, 6.5413078285301E+01_wp, 4.1065941214127E+01_wp, &
+      & 4.9674418069468E+00_wp, 5.2670525958601E+00_wp, 6.4231190889839E+01_wp, &
+      & 3.3061153040629E+01_wp, 4.1826808228299E+00_wp, 2.9794164793817E+01_wp, &
+      & 2.4534366589169E+01_wp, 4.6856517803282E+00_wp, 2.1242519514252E+01_wp, &
+      & 2.7366044676824E+01_wp, 3.4880771776963E+01_wp, 6.1391355088361E+01_wp, &
+      & 3.9166628211263E+01_wp, 3.5483366231146E+01_wp, 6.2152639920027E+01_wp, &
+      & 3.5637244661212E+01_wp, 4.3095375883142E+00_wp, 4.5694234361968E+00_wp, &
+      & 5.5707650512993E+01_wp, 2.8168797141138E+01_wp, 3.6276376496133E+00_wp, &
+      & 5.0038725736932E+01_wp, 4.0232199445588E+01_wp, 7.8256165209907E+00_wp, &
+      & 3.4196881867623E+01_wp, 4.5948203012455E+01_wp, 5.8234629326369E+01_wp, &
+      & 1.0946639476652E+02_wp, 6.5413078285301E+01_wp, 6.2152639920027E+01_wp, &
+      & 1.1451912162654E+02_wp, 5.9539056863648E+01_wp, 7.1974700323621E+00_wp, &
+      & 7.6314252828682E+00_wp, 9.3005759723011E+01_wp, 4.6024084470642E+01_wp, &
+      & 6.0564658155562E+00_wp, 3.1096288315400E+01_wp, 2.6113343013771E+01_wp, &
+      & 4.9128723609097E+00_wp, 2.2952234544006E+01_wp, 2.8568548657463E+01_wp, &
+      & 3.6582969286005E+01_wp, 6.0774463131515E+01_wp, 4.1065941214127E+01_wp, &
+      & 3.5637244661212E+01_wp, 5.9539056863648E+01_wp, 3.7354718892385E+01_wp, &
+      & 4.5185137849098E+00_wp, 4.7910472039631E+00_wp, 5.8426234588868E+01_wp, &
+      & 3.0069099854223E+01_wp, 3.8046669972155E+00_wp, 3.7613777716825E+00_wp, &
+      & 3.1591367921103E+00_wp, 5.9427366784289E-01_wp, 2.7770138595030E+00_wp, &
+      & 3.4556303884227E+00_wp, 4.4251790562564E+00_wp, 7.3484447367073E+00_wp, &
+      & 4.9674418069468E+00_wp, 4.3095375883142E+00_wp, 7.1974700323621E+00_wp, &
+      & 4.5185137849098E+00_wp, 5.4657103623079E-01_wp, 5.7953741705933E-01_wp, &
+      & 7.0674020034531E+00_wp, 3.6377387176181E+00_wp, 4.6022324073896E-01_wp, &
+      & 3.9882410743378E+00_wp, 3.3496939128841E+00_wp, 6.3011722860587E-01_wp, &
+      & 2.9445321791501E+00_wp, 3.6640530770944E+00_wp, 4.6920836370245E+00_wp, &
+      & 7.7915601482861E+00_wp, 5.2670525958601E+00_wp, 4.5694234361968E+00_wp, &
+      & 7.6314252828682E+00_wp, 4.7910472039631E+00_wp, 5.7953741705933E-01_wp, &
+      & 6.1449216340646E-01_wp, 7.4936722059056E+00_wp, 3.8571663116461E+00_wp, &
+      & 4.8798159569671E-01_wp, 4.8634793174522E+01_wp, 4.0854373962435E+01_wp, &
+      & 7.6842179141693E+00_wp, 3.5916746334507E+01_wp, 4.4681540401234E+01_wp, &
+      & 5.7219618191610E+01_wp, 9.4978522631689E+01_wp, 6.4231190889839E+01_wp, &
+      & 5.5707650512993E+01_wp, 9.3005759723011E+01_wp, 5.8426234588868E+01_wp, &
+      & 7.0674020034531E+00_wp, 7.4936722059056E+00_wp, 9.1384787005601E+01_wp, &
+      & 4.7044291543750E+01_wp, 5.9509000047757E+00_wp, 2.4997216709159E+01_wp, &
+      & 2.1287944173968E+01_wp, 3.9552290087112E+00_wp, 1.8876211586780E+01_wp, &
+      & 2.2967987820257E+01_wp, 2.9456279627371E+01_wp, 4.7586719998488E+01_wp, &
+      & 3.3061153040629E+01_wp, 2.8168797141138E+01_wp, 4.6024084470642E+01_wp, &
+      & 3.0069099854223E+01_wp, 3.6377387176181E+00_wp, 3.8571663116461E+00_wp, &
+      & 4.7044291543750E+01_wp, 2.4500571380658E+01_wp, 3.0634834288830E+00_wp, &
+      & 3.1670568222466E+00_wp, 2.6604014464326E+00_wp, 5.0038977112109E-01_wp, &
+      & 2.3388667861345E+00_wp, 2.9096243152442E+00_wp, 3.7260931204162E+00_wp, &
+      & 6.1849272739308E+00_wp, 4.1826808228299E+00_wp, 3.6276376496133E+00_wp, &
+      & 6.0564658155562E+00_wp, 3.8046669972155E+00_wp, 4.6022324073896E-01_wp, &
+      & 4.8798159569671E-01_wp, 5.9509000047757E+00_wp, 3.0634834288830E+00_wp, &
+      & 3.8751757297523E-01_wp], [16, 16])
 
    type(structure_type) :: mol
    type(d4_model) :: d4
@@ -1253,12 +1219,11 @@ subroutine test_gw_d4_mb07(error)
       call test_failed(error, "D4 model could not be created")
       return
    end if
-   call test_gw_gen(error, mol, d4, ref, with_cn=.true., with_q=.true., qat=qat)
+   call test_c6_gen(error, mol, d4, ref, with_cn=.true., with_q=.true., qat=qat)
 
-end subroutine test_gw_d4_mb07
+end subroutine test_c6_d4_mb07
 
-
-subroutine test_dgw_d4_mb08(error)
+subroutine test_dc6_d4_mb08(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -1280,11 +1245,11 @@ subroutine test_dgw_d4_mb08(error)
       call test_failed(error, "D4 model could not be created")
       return
    end if
-   call test_dgw_gen(error, mol, d4, with_cn=.true., with_q=.true., qat=qat)
+   call test_dc6_gen(error, mol, d4, with_cn=.true., with_q=.true., qat=qat)
 
-end subroutine test_dgw_d4_mb08
+end subroutine test_dc6_d4_mb08
 
-subroutine test_dgw_d4s_mb08(error)
+subroutine test_dc6_d4s_mb08(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -1306,9 +1271,9 @@ subroutine test_dgw_d4s_mb08(error)
       call test_failed(error, "D4S model could not be created")
       return
    end if
-   call test_dgw_gen(error, mol, d4s, with_cn=.true., with_q=.true., qat=qat)
+   call test_dc6_gen(error, mol, d4s, with_cn=.true., with_q=.true., qat=qat)
 
-end subroutine test_dgw_d4s_mb08
+end subroutine test_dc6_d4s_mb08
 
 
 subroutine test_pol_d4_mb09(error)
@@ -1325,6 +1290,13 @@ subroutine test_pol_d4_mb09(error)
       & 2.7347959316428E+00_wp, 2.3018401095949E+01_wp, 2.7347926176379E+00_wp, &
       & 1.5079046616252E+01_wp, 3.5315073387745E+00_wp, 2.7340548152913E+00_wp, &
       & 9.2442543133947E+00_wp]
+   real(wp), parameter :: ref_qq(16) = [&
+      & 5.4615565063498E+00_wp, 5.4615344655514E+00_wp, 5.4881514257539E+00_wp, &
+      & 5.4947568086372E+00_wp, 1.0065572291228E+02_wp, 5.4897066803227E+00_wp, &
+      & 2.1710888390047E+01_wp, 3.3655020315897E+01_wp, 5.4877260193864E+00_wp, &
+      & 5.4896898732732E+00_wp, 1.1239537836978E+02_wp, 5.4896832209087E+00_wp, &
+      & 5.6234642849808E+01_wp, 8.4341312278194E+00_wp, 5.4882021941076E+00_wp, &
+      & 3.3690369979688E+01_wp]
 
    call get_structure(mol, "MB16-43", "09")
    call new_d4_model(error, d4, mol)
@@ -1332,7 +1304,8 @@ subroutine test_pol_d4_mb09(error)
       call test_failed(error, "D4 model could not be created")
       return
    end if
-   call test_pol_gen(error, mol, d4, ref, with_cn=.true., with_q=.false.)
+   call test_pol_gen(error, mol, d4, ref, ref_qq, &
+      & with_cn=.true., with_q=.false.)
 
 end subroutine test_pol_d4_mb09
 
@@ -1350,6 +1323,13 @@ subroutine test_pol_d4s_mb09(error)
       & 2.2167964014782E+00_wp, 2.4223007635619E+01_wp, 2.1626725547918E+00_wp, &
       & 1.5342832501948E+01_wp, 4.0831999012216E+00_wp, 2.2319948533110E+00_wp, &
       & 1.0723200212288E+01_wp]
+   real(wp), parameter :: ref_qq(16) = [&
+      & 4.1746112173873E+00_wp, 4.0784434435940E+00_wp, 4.2881952805960E+00_wp, &
+      & 4.9863392903782E+00_wp, 1.7642138613056E+02_wp, 4.3756995919275E+00_wp, &
+      & 2.7101615753611E+01_wp, 3.9195211059822E+01_wp, 4.2292332291312E+00_wp, &
+      & 4.4498840354034E+00_wp, 1.1827729029096E+02_wp, 4.3412385859865E+00_wp, &
+      & 5.7218385751360E+01_wp, 9.7517123688813E+00_wp, 4.4803926324619E+00_wp, &
+      & 3.9080337934321E+01_wp]
 
    call get_structure(mol, "MB16-43", "09")
    call new_d4s_model(error, d4s, mol)
@@ -1357,7 +1337,8 @@ subroutine test_pol_d4s_mb09(error)
       call test_failed(error, "D4S model could not be created")
       return
    end if
-   call test_pol_gen(error, mol, d4s, ref, with_cn=.true., with_q=.true.)
+   call test_pol_gen(error, mol, d4s, ref, ref_qq, &
+      & with_cn=.true., with_q=.true.)
 
 end subroutine test_pol_d4s_mb09
 

@@ -372,7 +372,8 @@ class DispersionModel(Structure):
         """
         Evaluate dispersion related properties, like polarizabilities and C6 coefficients.
         Will also return the coordination numbers and partial charges used to derive
-        the polarizabilities. Only the static polarizibility is return at the moment.
+        the polarizabilities. Both dipole-dipole and quadrupole-quadrupole static
+        polarizabilities are returned.
 
         Example
         -------
@@ -403,6 +404,7 @@ class DispersionModel(Structure):
         _cn = np.zeros((len(self)))
         _charges = np.zeros((len(self)))
         _alpha = np.zeros((len(self)))
+        _alphaqq = np.zeros((len(self)))
 
         library.get_properties(
             self._mol,
@@ -411,6 +413,7 @@ class DispersionModel(Structure):
             _cast("double*", _charges),
             _cast("double*", _c6),
             _cast("double*", _alpha),
+            _cast("double*", _alphaqq),
         )
 
         return {
@@ -418,6 +421,7 @@ class DispersionModel(Structure):
             "partial charges": _charges,
             "c6 coefficients": _c6,
             "polarizabilities": _alpha,
+            "polarizabilities quad-quad": _alphaqq,
         }
 
     def get_pairwise_dispersion(self, param: DampingParam) -> dict:

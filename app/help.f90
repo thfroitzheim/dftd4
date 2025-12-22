@@ -45,7 +45,8 @@ module dftd4_help
       "                         write results to file (default: dftd4.txt),"//nl//&
       "                         attempts to add to Turbomole gradient and gradlatt files"//nl//&
       "   --hessian             Evaluate molecular hessian"//nl//&
-      "   --property            Show dispersion related atomic and system properties"//nl//&
+      "   --property            Show dispersion related atomic and system properties,"//nl//&
+      "                         including dipole-dipole and quadrupole-quadrupole polarizabilities"//nl//&
       "   --pair-resolved       Calculate pairwise representation of dispersion energy"//nl//&
       "   --noedisp             Disable writing of dispersion energy to .EDISP file"//nl//&
       "   --json [file]         Dump results to JSON output (default: dftd4.json)"//nl//&
