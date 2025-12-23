@@ -24,6 +24,8 @@ module dftd4_model_d4s
       & get_effective_charge, get_electronegativity, get_hardness
    use dftd4_reference
    use dftd4_model_utils
+   use dftd4_integrator_type, only : integrator_type
+   use dftd4_integrator_trapezoid, only : trapezoid_integrator, new_trapezoid_integrator
    use mctc_env, only : error_type, fatal_error, wp
    use mctc_io, only : structure_type
    use mctc_io_constants, only : pi
@@ -48,6 +50,24 @@ module dftd4_model_d4s
       !> Evaluate atomic polarizabilities from cache
       procedure :: get_polarizabilities
 
+      !> Get two-body dispersion coefficients for an atom pair
+      procedure :: get_2b_coeffs
+
+      !> Get two-body dispersion coefficients and derivatives for an atom pair
+      procedure :: get_2b_derivs
+
+      !> Get three-body dispersion coefficients for an atom triple
+      procedure :: get_3b_coeffs
+
+      !> Get three-body dispersion coefficients and derivatives for an atom triple
+      procedure :: get_3b_derivs
+
+      !> Calculate damping radius for two-body interactions
+      procedure :: get_2b_rdamp
+
+      !> Calculate damping radius for three-body interactions
+      procedure :: get_3b_rdamp
+
    end type d4s_model
 
 
@@ -56,6 +76,20 @@ module dftd4_model_d4s
 
    !> Default charge scaling steepness for partial charge extrapolation
    real(wp), parameter :: gc_default = 2.0_wp
+
+   !> Number of imaginary frequency integration points
+   integer, parameter :: ngrid = 23
+
+   !> Imaginary frequencies for integration
+   real(wp), parameter :: freq(ngrid) = [ &
+      & 0.000001_wp, 0.050000_wp, 0.100000_wp, &
+      & 0.200000_wp, 0.300000_wp, 0.400000_wp, &
+      & 0.500000_wp, 0.600000_wp, 0.700000_wp, &
+      & 0.800000_wp, 0.900000_wp, 1.000000_wp, &
+      & 1.200000_wp, 1.400000_wp, 1.600000_wp, &
+      & 1.800000_wp, 2.000000_wp, 2.500000_wp, &
+      & 3.000000_wp, 4.000000_wp, 5.000000_wp, &
+      & 7.500000_wp, 10.00000_wp]
 
 contains
 
@@ -84,8 +118,9 @@ subroutine new_d4s_model(error, d4, mol, ga, gc, qmod)
 
    integer :: isp, izp, iref, jsp, jzp, jref
    integer :: mref, tmp_qmod
-   real(wp) :: aiw(23), c6
+   real(wp) :: aiw(ngrid), c6
    real(wp), parameter :: thopi = 3.0_wp/pi
+   type(trapezoid_integrator), allocatable :: integrator
 
    ! check for unsupported elements (104 (Rf) - 111 (Rg))
    do isp = 1, mol%nid
@@ -96,7 +131,10 @@ subroutine new_d4s_model(error, d4, mol, ga, gc, qmod)
    end do
 
    d4%ncoup = mol%nat
-   d4%ngrid = 23
+   d4%ngrid = ngrid
+   allocate(integrator)
+   call new_trapezoid_integrator(integrator, d4%ngrid, freq)
+   call move_alloc(integrator, d4%integrator)
 
    if (present(ga)) then
       d4%ga = ga
@@ -169,7 +207,7 @@ subroutine new_d4s_model(error, d4, mol, ga, gc, qmod)
    end if
 
    allocate(d4%q(mref, mol%nid))
-   allocate(d4%aiw(23, mref, mol%nid))
+   allocate(d4%aiw(ngrid, mref, mol%nid))
    select case(tmp_qmod)
    case default
       call fatal_error(error, "Unsupported option for charge model.")
@@ -214,7 +252,7 @@ subroutine new_d4s_model(error, d4, mol, ga, gc, qmod)
          do iref = 1, d4%ref(isp)
             do jref = 1, d4%ref(jsp)
                aiw(:) = d4%aiw(:, iref, isp) * d4%aiw(:, jref, jsp)
-               c6 = thopi * trapzd(aiw)
+               c6 = thopi * d4%integrator%integrate(aiw)
                d4%c6(jref, iref, jsp, isp) = c6
                d4%c6(iref, jref, isp, jsp) = c6
             end do
@@ -710,5 +748,198 @@ subroutine get_polarizabilities(self, cache, alpha, alphaqq, &
 
 end subroutine get_polarizabilities
 
+
+!> Get two-body dispersion coefficients for atom pair ij
+subroutine get_2b_coeffs(self, cache, iat, jat, izp, jzp, c6, c8)
+   !> Dispersion model
+   class(d4s_model), intent(in) :: self
+   !> Dispersion cache
+   type(dispersion_cache), intent(in) :: cache
+   !> First atom index
+   integer, intent(in) :: iat
+   !> Second atom index
+   integer, intent(in) :: jat
+   !> Atomic number of first atom
+   integer, intent(in) :: izp
+   !> Atomic number of second atom
+   integer, intent(in) :: jzp
+   !> C6 dispersion coefficient
+   real(wp), intent(out) :: c6
+   !> C8 dispersion coefficient
+   real(wp), intent(out) :: c8
+   
+   c6 = cache%c6(iat, jat)
+   c8 = 3.0_wp * c6 * self%r4r2(izp) * self%r4r2(jzp)
+
+end subroutine get_2b_coeffs
+
+
+
+!> Get two-body dispersion coefficients for atom pair ij with derivatives
+subroutine get_2b_derivs(self, cache, iat, jat, izp, jzp, c6, c8, &
+   & dc6dcni, dc6dqi, dc6dcnj, dc6dqj, dc8dcni, dc8dqi, dc8dcnj, dc8dqj)
+   !> Dispersion model
+   class(d4s_model), intent(in) :: self
+   !> Dispersion cache
+   type(dispersion_cache), intent(in) :: cache
+   !> First atom index
+   integer, intent(in) :: iat
+   !> Second atom index
+   integer, intent(in) :: jat
+   !> Atomic number of first atom
+   integer, intent(in) :: izp
+   !> Atomic number of second atom
+   integer, intent(in) :: jzp
+   !> C6 dispersion coefficient
+   real(wp), intent(out) :: c6
+   !> C8 dispersion coefficient
+   real(wp), intent(out) :: c8
+   !> Derivative of C6 w.r.t the coordination number of atom i
+   real(wp), intent(out) :: dc6dcni
+   !> Derivative of C6 w.r.t the partial charge of atom i
+   real(wp), intent(out) :: dc6dqi
+   !> Derivative of C6 w.r.t the coordination number of atom i
+   real(wp), intent(out) :: dc6dcnj
+   !> Derivative of C6 w.r.t the partial charge of atom i
+   real(wp), intent(out) :: dc6dqj
+   !> Derivative of C8 w.r.t the coordination number of atom i
+   real(wp), intent(out) :: dc8dcni
+   !> Derivative of C8 w.r.t the partial charge of atom i
+   real(wp), intent(out) :: dc8dqi
+   !> Derivative of C8 w.r.t the coordination number of atom i
+   real(wp), intent(out) :: dc8dcnj
+   !> Derivative of C8 w.r.t the partial charge of atom i
+   real(wp), intent(out) :: dc8dqj
+   
+   real(wp) :: scale
+   
+   scale = 3.0_wp * self%r4r2(izp) * self%r4r2(jzp)
+
+   c6 = cache%c6(iat, jat)
+   c8 = scale * c6
+   
+   dc6dcni = cache%dc6dcn(iat, jat)
+   dc8dcni = scale * dc6dcni
+   dc6dcnj = cache%dc6dcn(jat, iat)
+   dc8dcnj = scale * dc6dcnj
+   
+   dc6dqi = cache%dc6dq(iat, jat)
+   dc8dqi = scale * dc6dqi
+   dc6dqj = cache%dc6dq(jat, iat)
+   dc8dqj = scale * dc6dqj
+
+end subroutine get_2b_derivs
+
+
+!> Get three-body dispersion coefficient for atom triple ijk
+subroutine get_3b_coeffs(self, cache, iat, jat, kat, c9)
+   !> Dispersion model
+   class(d4s_model), intent(in) :: self
+   !> Dispersion cache
+   type(dispersion_cache), intent(in) :: cache
+   !> First atom index
+   integer, intent(in) :: iat
+   !> Second atom index
+   integer, intent(in) :: jat
+   !> Third atom index
+   integer, intent(in) :: kat
+   !> C9 dispersion coefficient
+   real(wp), intent(out) :: c9
+
+   c9 = -sqrt(abs(cache%c6(iat, jat) * cache%c6(iat, kat) * cache%c6(jat, kat)))
+
+end subroutine get_3b_coeffs
+
+
+!> Get three-body dispersion coefficient for atom triple ijk with derivatives
+subroutine get_3b_derivs(self, cache, iat, jat, kat, c9, &
+   & dc9dcni, dc9dqi, dc9dcnj, dc9dqj, dc9dcnk, dc9dqk)
+   !> Dispersion model
+   class(d4s_model), intent(in) :: self
+   !> Dispersion cache
+   type(dispersion_cache), intent(in) :: cache
+   !> First atom index
+   integer, intent(in) :: iat
+   !> Second atom index
+   integer, intent(in) :: jat
+   !> Third atom index
+   integer, intent(in) :: kat
+   !> C9 dispersion coefficient
+   real(wp), intent(out) :: c9
+   !> Derivative of C9 w.r.t the coordination number of atom i
+   real(wp), intent(out) :: dc9dcni
+   !> Derivative of C9 w.r.t the partial charge of atom i
+   real(wp), intent(out) :: dc9dqi
+   !> Derivative of C9 w.r.t the coordination number of atom j
+   real(wp), intent(out) :: dc9dcnj
+   !> Derivative of C9 w.r.t the partial charge of atom j
+   real(wp), intent(out) :: dc9dqj
+   !> Derivative of C9 w.r.t the coordination number of atom k
+   real(wp), intent(out) :: dc9dcnk
+   !> Derivative of C9 w.r.t the partial charge of atom k
+   real(wp), intent(out) :: dc9dqk
+
+   real(wp) :: c6ij, c6ik, c6jk
+
+   c6ij = cache%c6(iat, jat)
+   c6ik = cache%c6(iat, kat)
+   c6jk = cache%c6(jat, kat)
+
+   c9 = -sqrt(abs(c6ij * c6ik * c6jk))
+
+   c6ij = 0.5_wp * c9 / c6ij
+   c6ik = 0.5_wp * c9 / c6ik
+   c6jk = 0.5_wp * c9 / c6jk
+
+   dc9dcni = cache%dc6dcn(iat, jat) * c6ij + cache%dc6dcn(iat, kat) * c6ik
+   dc9dqi = cache%dc6dq(iat, jat) * c6ij + cache%dc6dq(iat, kat) * c6ik
+      
+   dc9dcnj = cache%dc6dcn(jat, iat) * c6ij + cache%dc6dcn(jat, kat) * c6jk
+   dc9dqj = cache%dc6dq(jat, iat) * c6ij + cache%dc6dq(jat, kat) * c6jk
+      
+   dc9dcnk = cache%dc6dcn(kat, iat) * c6ik + cache%dc6dcn(kat, jat) * c6jk
+   dc9dqk = cache%dc6dq(kat, iat) * c6ik + cache%dc6dq(kat, jat) * c6jk
+
+end subroutine get_3b_derivs
+
+
+!> Calculate damping radius for two-body interactions
+pure function get_2b_rdamp(self, izp, jzp, a1, a2) result(rdamp)
+   !> Dispersion model
+   class(d4s_model), intent(in) :: self
+   !> Atomic number of first atom
+   integer, intent(in) :: izp
+   !> Atomic number of second atom
+   integer, intent(in) :: jzp
+   !> Linear damping radius dependence
+   real(wp), intent(in) :: a1
+   !> Constant damping radius shift
+   real(wp), intent(in) :: a2
+   !> Damping radius
+   real(wp) :: rdamp
+
+   rdamp = a1 * sqrt(3.0_wp * self%r4r2(izp) * self%r4r2(jzp)) + a2
+
+end function get_2b_rdamp
+
+
+!> Calculate damping radius for three-body interactions
+pure function get_3b_rdamp(self, izp, jzp, a1, a2) result(rdamp)
+   !> Dispersion model
+   class(d4s_model), intent(in) :: self
+   !> Atomic number of first atom
+   integer, intent(in) :: izp
+   !> Atomic number of second atom
+   integer, intent(in) :: jzp
+   !> Linear damping radius dependence
+   real(wp), intent(in) :: a1
+   !> Constant damping radius shift
+   real(wp), intent(in) :: a2
+   !> Three-body damping radius
+   real(wp) :: rdamp
+
+   rdamp = a1 * sqrt(3.0_wp * self%r4r2(izp) * self%r4r2(jzp)) + a2
+
+end function get_3b_rdamp
 
 end module dftd4_model_d4s

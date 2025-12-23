@@ -42,16 +42,20 @@ module dftd4_cache
       !> Quadrupole-quadrupole dynamic polarizabilities: [ngrid, nat]
       real(wp), allocatable :: aqiw(:, :)
 
-      !> Derivative of dipole-dipole polarizabilities w.r.t. coordination number: [ngrid, nat]
+      !> Derivative of dipole-dipole dynamic polarizabilities
+      !> w.r.t. the coordination numbers: [ngrid, nat]
       real(wp), allocatable :: dadiwdcn(:, :)
 
-      !> Derivative of dipole-dipole polarizabilities w.r.t. partial charge: [ngrid, nat]
+      !> Derivative of dipole-dipole dynamic polarizabilities
+      !> w.r.t. the atomic partial charges: [ngrid, nat]
       real(wp), allocatable :: dadiwdq(:, :)
 
-      !> Derivative of quadrupole-quadrupole polarizabilities w.r.t. coordination number: [ngrid, nat]
+      !> Derivative of quadrupole-quadrupole dynamic polarizabilities
+      !> w.r.t. the coordination numbers: [ngrid, nat]
       real(wp), allocatable :: daqiwdcn(:, :)
 
-      !> Derivative of quadrupole-quadrupole polarizabilities w.r.t. partial charge: [ngrid, nat]
+      !> Derivative of quadrupole-quadrupole dynamic polarizabilities
+      !> w.r.t. the atomic partial charge: [ngrid, nat]
       real(wp), allocatable :: daqiwdq(:, :)
 
    end type dispersion_cache

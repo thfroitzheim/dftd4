@@ -15,5 +15,6 @@
 # along with dftd4.  If not, see <https://www.gnu.org/licenses/>.
 
 srcs += files(
-  'rational.f90',
+  'trapezoid.f90',
+  'type.f90',
 )

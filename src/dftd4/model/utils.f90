@@ -20,7 +20,7 @@ module dftd4_model_utils
    use mctc_env, only : wp
    implicit none
    
-   public :: is_exceptional, weight_cn, zeta, dzeta, trapzd
+   public :: is_exceptional, weight_cn, zeta, dzeta
 
 contains
 
@@ -76,49 +76,5 @@ elemental function dzeta(a, c, qref, qmod)
    endif
 
 end function dzeta
-
-!> numerical Casimir--Polder integration
-pure function trapzd(pol)
-   real(wp), intent(in) :: pol(23)
-   real(wp) :: trapzd
-
-   real(wp), parameter :: freq(23) = [ &
-      & 0.000001_wp, 0.050000_wp, 0.100000_wp, &
-      & 0.200000_wp, 0.300000_wp, 0.400000_wp, &
-      & 0.500000_wp, 0.600000_wp, 0.700000_wp, &
-      & 0.800000_wp, 0.900000_wp, 1.000000_wp, &
-      & 1.200000_wp, 1.400000_wp, 1.600000_wp, &
-      & 1.800000_wp, 2.000000_wp, 2.500000_wp, &
-      & 3.000000_wp, 4.000000_wp, 5.000000_wp, &
-      & 7.500000_wp, 10.00000_wp]
-   real(wp), parameter :: weights(23) = 0.5_wp * [ &
-      &  ( freq (2) - freq (1) ),  &
-      &  ( freq (2) - freq (1) ) + ( freq (3) - freq (2) ),  &
-      &  ( freq (3) - freq (2) ) + ( freq (4) - freq (3) ),  &
-      &  ( freq (4) - freq (3) ) + ( freq (5) - freq (4) ),  &
-      &  ( freq (5) - freq (4) ) + ( freq (6) - freq (5) ),  &
-      &  ( freq (6) - freq (5) ) + ( freq (7) - freq (6) ),  &
-      &  ( freq (7) - freq (6) ) + ( freq (8) - freq (7) ),  &
-      &  ( freq (8) - freq (7) ) + ( freq (9) - freq (8) ),  &
-      &  ( freq (9) - freq (8) ) + ( freq(10) - freq (9) ),  &
-      &  ( freq(10) - freq (9) ) + ( freq(11) - freq(10) ),  &
-      &  ( freq(11) - freq(10) ) + ( freq(12) - freq(11) ),  &
-      &  ( freq(12) - freq(11) ) + ( freq(13) - freq(12) ),  &
-      &  ( freq(13) - freq(12) ) + ( freq(14) - freq(13) ),  &
-      &  ( freq(14) - freq(13) ) + ( freq(15) - freq(14) ),  &
-      &  ( freq(15) - freq(14) ) + ( freq(16) - freq(15) ),  &
-      &  ( freq(16) - freq(15) ) + ( freq(17) - freq(16) ),  &
-      &  ( freq(17) - freq(16) ) + ( freq(18) - freq(17) ),  &
-      &  ( freq(18) - freq(17) ) + ( freq(19) - freq(18) ),  &
-      &  ( freq(19) - freq(18) ) + ( freq(20) - freq(19) ),  &
-      &  ( freq(20) - freq(19) ) + ( freq(21) - freq(20) ),  &
-      &  ( freq(21) - freq(20) ) + ( freq(22) - freq(21) ),  &
-      &  ( freq(22) - freq(21) ) + ( freq(23) - freq(22) ),  &
-      &  ( freq(23) - freq(22) ) ]
-
-   trapzd = sum(pol*weights)
-
-end function trapzd
-
 
 end module dftd4_model_utils

@@ -75,7 +75,7 @@ subroutine get_dispersion(mol, disp, param, cutoff, energy, gradient, sigma)
    grad = present(gradient).or.present(sigma)
 
    if (.not. allocated(disp%mchrg)) then
-      write(error_unit, '("[Error]:", 1x, a)') "Not supported for non-self-consistent D4 version"
+      write(error_unit, '("[Error]:", 1x, a)') "Not supported for self-consistent DFT-D"
       error stop
    end if
 
@@ -104,22 +104,32 @@ subroutine get_dispersion(mol, disp, param, cutoff, energy, gradient, sigma)
    end if
 
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp2, lattr)
-   call param%get_dispersion2(mol, lattr, cutoff%disp2, disp%r4r2, &
-      & cache%c6, cache%dc6dcn, cache%dc6dq, energies, dEdcn, dEdq, gradient, sigma)
-   if (grad) then
-      call d4_gemv(dqdr, dEdq, gradient, beta=1.0_wp)
-      call d4_gemv(dqdL, dEdq, sigma, beta=1.0_wp)
+   call disp%get_dispersion2(mol, cache, param, lattr, cutoff%disp2, &
+      & energies, dEdcn, dEdq, gradient, sigma)
+   
+   if (.not.disp%charge_dep_3b) then
+      q(:) = 0.0_wp
+      if (grad) then
+         call d4_gemv(dqdr, dEdq, gradient, beta=1.0_wp)
+         call d4_gemv(dqdL, dEdq, sigma, beta=1.0_wp)
+      end if
    end if
 
-   q(:) = 0.0_wp
    call disp%update(mol, cache, cn, q, grad=grad)
 
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp3, lattr)
-   call param%get_dispersion3(mol, lattr, cutoff%disp3, disp%r4r2, &
-      & cache%c6, cache%dc6dcn, cache%dc6dq, energies, dEdcn, dEdq, gradient, sigma)
+   call disp%get_dispersion3(mol, cache, param, lattr, cutoff%disp3, &
+      & energies, dEdcn, dEdq, gradient, sigma)
    if (grad) then
       call add_coordination_number_derivs(mol, lattr, cutoff%cn, &
          & disp%rcov, disp%en, dEdcn, gradient, sigma)
+   end if
+
+   if (disp%charge_dep_3b) then
+      if (grad) then
+         call d4_gemv(dqdr, dEdq, gradient, beta=1.0_wp)
+         call d4_gemv(dqdL, dEdq, sigma, beta=1.0_wp)
+      end if
    end if
 
    energy = sum(energies)
@@ -161,7 +171,7 @@ subroutine get_properties(mol, disp, cutoff, cn, q, c6, alpha, alphaqq)
    type(error_type), allocatable :: error
 
    if (.not. allocated(disp%mchrg)) then
-      write(error_unit, '("[Error]:", 1x, a)') "Not supported for non-self-consistent D4 version"
+      write(error_unit, '("[Error]:", 1x, a)') "Not supported for self-consistent DFT-D"
       error stop
    end if
 
@@ -212,7 +222,7 @@ subroutine get_pairwise_dispersion(mol, disp, param, cutoff, energy2, energy3)
    type(error_type), allocatable :: error
 
    if (.not. allocated(disp%mchrg)) then
-      write(error_unit, '("[Error]:", 1x, a)') "Not supported for non-self-consistent D4 version"
+      write(error_unit, '("[Error]:", 1x, a)') "Not supported for self-consistent DFT-D"
       error stop
    end if
 
@@ -234,15 +244,15 @@ subroutine get_pairwise_dispersion(mol, disp, param, cutoff, energy2, energy3)
    energy2(:, :) = 0.0_wp
    energy3(:, :) = 0.0_wp
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp2, lattr)
-   call param%get_pairwise_dispersion2(mol, lattr, cutoff%disp2, disp%r4r2, &
-      & cache%c6, energy2)
+   call disp%get_pairwise_dispersion2(mol, cache, param, lattr, cutoff%disp2, &
+      & energy2)
 
    q(:) = 0.0_wp
    call disp%update(mol, cache, cn, q, grad=.false.)
 
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp3, lattr)
-   call param%get_pairwise_dispersion3(mol, lattr, cutoff%disp3, disp%r4r2, &
-      & cache%c6, energy3)
+   call disp%get_pairwise_dispersion3(mol, cache, param, lattr, cutoff%disp3, &
+      & energy3)
 
 end subroutine get_pairwise_dispersion
 
