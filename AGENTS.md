@@ -13,22 +13,25 @@ This document provides guidance for AI agents and contributors working with the 
 
 ```
 dftd4/
-├── app/              # CLI frontend (dftd4) and sample input files
-├── assets/           # Parameter tables and example data
-├── config/           # Build configuration scripts
-├── doc/              # Sphinx documentation; ford.md for developer docs
-├── include/          # Public C headers (dftd4.h)
-├── man/              # Manual pages (asciidoc)
-├── python/           # Optional Python extension (CFFI-based)
-├── src/dftd4/        # Main library source code
-│   ├── damping/      # Damping models and parameters
-│   ├── data/         # Element and model data
-│   ├── model/        # Dispersion model implementations
-│   ├── api.f90       # C API implementation (optional)
-│   ├── compat.f90    # API v2 compatibility layer (optional)
-│   └── ...           # Core modules: cutoff, param, numdiff, output, utils, version
-└── subprojects/      # Meson wrap dependencies (mctc-lib, mstore, multicharge, json-fortran)
-├── test/             # Tests (unit/ for Fortran, api/ for C examples)
+├── app/               # CLI frontend (dftd4) and sample input files
+├── assets/            # Parameter tables and example data
+├── config/            # Build configuration scripts
+├── doc/               # Sphinx documentation; ford.md for developer docs
+├── include/           # Public C headers (dftd4.h)
+├── man/               # Manual pages (asciidoc)
+├── python/            # Optional Python extension (CFFI-based)
+├── src/dftd4/         # Main library source code
+│   ├── damping/       # Damping models and parameters
+│   ├── data/          # Element and model data
+│   ├── integrator/    # Numerical integration
+│   ├── model/         # Dispersion model implementations
+|   │   ├── reference/ # Reference polarizabilities
+│   │   └── ...        # Definition of the dispersion models
+│   ├── param/         # Functional specific damping parameters
+│   ├── api.f90        # C API implementation (optional)
+│   └── ...            # Core modules: cutoff, numdiff, output, utils, version
+└── subprojects/       # Meson wrap dependencies (mctc-lib, mstore, multicharge, json-fortran)
+├── test/              # Tests (unit/ for Fortran, api/ for C examples)
 ```
 
 ## Build Systems
@@ -117,14 +120,15 @@ Dependencies are provided via Meson subprojects/wraps, CMake find modules, fpm, 
 - `structure_type` (`mctc_io`) - molecular structure container (numbers, positions, lattice, periodic flags).
 - `dispersion_model` (`dftd4_model_type`) - abstract base for D4/D4S dispersion models.
 - `d4_model` / `d4s_model` (`dftd4_model_d4`, `dftd4_model_d4s`) - concrete dispersion model instances.
-- `damping_param` (`dftd4_damping`) and `rational_damping_param` (`dftd4_damping_rational`) - damping configuration objects.
+- `damping_type` (`dftd4_damping_type`) - damping function for two- and three-body as well as parameters.
+- `param_type` (`dftd4_param_type`) - damping parameters.
 - `realspace_cutoff` (`dftd4_cutoff`) - cutoff settings for CN, two-body, and three-body terms.
 - `error_type` (`mctc_env`) - error propagation across Fortran APIs.
 
 #### Core Functions
 - `read_structure` (`mctc_io`) - load a structure from disk into `structure_type`.
 - `new_d4_model` / `new_d4s_model` (`dftd4_model_d4`, `dftd4_model_d4s`) - construct dispersion models.
-- `get_rational_damping` (`dftd4_param`) - fetch damping parameters by functional name or ID.
+- `get_damping_params` (`dftd4_param`) - fetch damping parameters by functional name or ID.
 - `get_dispersion` (`dftd4_disp`) - compute dispersion energy (and optionally gradients/virial).
 - `get_pairwise_dispersion` (`dftd4_disp`) - compute pairwise-resolved energies.
 - `get_properties` (`dftd4_disp`) - compute CN, charges, C6, and polarizabilities.
@@ -136,7 +140,6 @@ Dependencies are provided via Meson subprojects/wraps, CMake find modules, fpm, 
   pkg-config --cflags --libs dftd4
   ```
   If pkg-config omits transitive deps, append `-lmulticharge -lmctc-lib -lmstore`.
-- Compatibility layer for the 2.5.x API via `-Dapi_v2=true` (`compat.f90`), primarily to preserve VASP compatibility.
 
 ### Python API
 - Install from conda-forge (`conda install dftd4-python`), or build in-tree:
@@ -160,6 +163,7 @@ Dependencies are provided via Meson subprojects/wraps, CMake find modules, fpm, 
 
 Tests are organized by functionality in `test/`:
 - `test/unit/test_model.f90` - dispersion model construction and core behavior.
+- `test/unit/test_damping.f90` - damping function evaluation.
 - `test/unit/test_dftd4.f90` - end-to-end D4 energy/gradient computations.
 - `test/unit/test_pairwise.f90` - pairwise-resolved dispersion energies.
 - `test/unit/test_param.f90` - parameter parsing and access from `assets/parameters.toml`.
@@ -308,10 +312,9 @@ GitHub Actions workflows are configured in `.github/workflows/`:
 ### Extending APIs
 1. Fortran: add modules under `src/dftd4/` and export needed interfaces.
 2. C API: extend `src/dftd4/api.f90` and `include/dftd4.h`.
-3. VASP compatibility layer: update `compat.f90` and only compile it when the `api_v2` option is enabled (set `-Dapi_v2=true`) to preserve 2.5.x behavior.
-4. Python: update CFFI bindings in `python/` and adjust `pyproject.toml`/`meson_options.txt` as needed.
-5. Register new sources in `meson.build`/`CMakeLists.txt`.
-6. Add tests (Fortran or C) and documentation.
+3. Python: update CFFI bindings in `python/` and adjust `pyproject.toml`/`meson_options.txt` as needed.
+4. Register new sources in `meson.build`/`CMakeLists.txt`.
+5. Add tests (Fortran or C) and documentation.
 
 ### CLI Enhancements
 1. Implement behavior in `app/` (e.g., `argument.f90`, `driver.f90`, `help.f90`).
@@ -342,13 +345,16 @@ _build/app/dftd4 --pair-resolved mol.xyz
 program d4_energy
    use mctc_env, only : wp, error_type
    use mctc_io, only : structure_type, read_structure
-   use dftd4, only : d4_model, new_d4_model, damping_param, &
-      & get_rational_damping, realspace_cutoff, get_dispersion
+   use dftd4, only : d4_model, new_d4_model, damping_type, &
+      & get_damping_params, realspace_cutoff, get_dispersion, &
+      & dftd_models, twobody_damping_function, threebody_damping_function, &
+      & param_type
    implicit none
 
    type(structure_type) :: mol
    type(d4_model) :: model
-   class(damping_param), allocatable :: param
+   type(damping_type) :: damp
+   type(param_type), allocatable :: param
    type(realspace_cutoff) :: cutoff
    type(error_type), allocatable :: error
    real(wp) :: energy
@@ -365,8 +371,10 @@ program d4_energy
       stop 1
    end if
 
-   call get_rational_damping("pbe", param)
-   call get_dispersion(mol, model, param, cutoff, energy)
+   call get_damping_params(error, "pbe", dftd_models%d4, d4%default_damping_2b, &
+      & d4%default_damping_3b, param)
+   call new_damping(error, damp, d4%default_damping_2b, d4%default_damping_3b)
+   call get_dispersion(mol, model, damp, param, cutoff, energy)
 
    write (*, '(a,f18.12)') "D4 dispersion energy (Hartree): ", energy
 end program d4_energy
@@ -392,7 +400,6 @@ _build/app/dftd4 param --list
 | `custom_libraries` | array | `[]` | Extra libraries for custom BLAS/LAPACK |
 | `openmp` | boolean | `true` | Enable OpenMP parallelization |
 | `api` | boolean | `true` | Build C API |
-| `api_v2` | boolean | `false` | Enable 2.5.x compatibility layer |
 | `python` | boolean | `false` | Build Python extension module |
 | `python_version` | string | `python3` | Python executable to link against |
 | `ilp64` | boolean | `false` | Enable BLAS/LAPACK ILP64 |
@@ -403,7 +410,6 @@ _build/app/dftd4 param --list
 |--------|-------------|
 | `WITH_OpenMP` | Enable OpenMP |
 | `WITH_API` | Build C API |
-| `WITH_API_V2` | Enable compatibility layer |
 | `WITH_PYTHON` | Build Python extension (may require out-of-tree steps) |
 
 ## Troubleshooting

@@ -14,7 +14,7 @@
 ! You should have received a copy of the GNU Lesser General Public License
 ! along with dftd4.  If not, see <https://www.gnu.org/licenses/>.
 
-module dftd4_reference
+module dftd4_model_reference_d4
    use mctc_env, only : wp
    use mctc_io_symbols, only : to_number
    use dftd4_data, only : get_hardness, get_effective_charge
@@ -90,7 +90,7 @@ module dftd4_reference
    real(wp),dimension(17)       :: seccnd3
    real(wp),dimension(23,17)    :: secaiw
 
-   include 'reference.inc'
+   include 'd4.inc'
 
 contains
 
@@ -500,4 +500,4 @@ elemental function zeta(a, c, qref, qmod)
 end function zeta
 
 
-end module dftd4_reference
+end module dftd4_model_reference_d4

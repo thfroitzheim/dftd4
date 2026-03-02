@@ -33,14 +33,64 @@ Specify the functional to select the correct parameters.
      Set charge to molecule,
      overrides charge in .CHRG file
 
+*-i, --input* _format_::
+     Hint for the format of the input file
+
 *-f, --func* _functional_::
      Dispersion correction for specified density functional method
 
-*--param* _s6_ _s8_ _a1_ _a2_::
-     use this damping parameters for energy calculation
+*-2b, --damp-2b* _function_::
+     use specific damping function for two-body dispersion
+     (options: bj, screened, zero, mzero, op, cso, koide)
 
-*--mbdscale* _s9_::
-     scale the many-body dispersion energy (default=1.0)
+*-3b, --damp-3b* _function_::
+     use specific damping function for three-body dispersion
+     (options: bj, screened, zero, zero-avg)
+
+*--s6* _s6_::
+     scaling factor for two-body dip-dip (C6) dispersion (default=1.0)
+
+*--s8* _s8_::
+     scaling factor for two-body dip-quad (C8) dispersion
+
+*--s9* _s9_::
+     scaling factor for three-body dip-dip-dip (C9 or ATM) dispersion
+
+*--a1* _a1_::
+     linear radius scaling for the damping function
+
+*--a2* _a2_::
+     constant radius shift for the damping function
+
+*--a3* _a3_::
+     damping radius scaling in screening function (used in: screened)
+     short-range s6 modification (used in: cso)
+
+*--a4* _a4_::
+     screening function exponent (used in: screened)
+     radius scaling for short-range s6 modification (used in: cso)
+
+*--rs6* _rs6_::
+     distance-radius-fraction scaling for two-body dip-dip (C6) dispersion
+     (used in: zero, mzero, koide)
+
+*--rs8* _rs8_::
+     distance-radius-fraction scaling for two-body dip-quad (C8) dispersion
+     (used in: zero, mzero, koide)
+
+*--rs9* _rs9_::
+     distance-radius-fraction scaling for three-body dip-dip-dip (C9 or ATM) dispersion
+     (used in: zero)
+
+*--alp* _alp_::
+     exponent of distance-radius-fraction scaling (used in: zero, mzero)
+
+*--bet* _bet_::
+     optimized power exponent (used in: op)
+     additive linear radius scaling (used in: mzero)
+
+*--noatm*::
+     deactivate three-body dispersion
 
 *--zeta* _real_ _real_::
      Adjust charge scaling height and charge scaling steepness

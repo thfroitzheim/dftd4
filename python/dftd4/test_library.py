@@ -16,7 +16,7 @@
 
 
 from dftd4.library import get_api_version
-from pkg_resources import parse_version
+from packaging.version import parse as parse_version
 
 from dftd4 import __version__
 

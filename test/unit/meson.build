@@ -29,6 +29,7 @@ endif
 
 tests = [
   'model',
+  'damping',
   'dftd4',
   'pairwise',
   'param',

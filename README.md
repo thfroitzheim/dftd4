@@ -320,65 +320,14 @@ The recommended way to access the Fortran module API is by using `dftd4` as a me
 Alternatively, the project is accessible by the Fortran package manager ([fpm](https://github.com/fortran-lang/fpm)).
 
 The complete API is available from `dftd4` module, the individual modules are available to the user as well but are not part of the public API and therefore not guaranteed to remain stable.
-ABI compatibility is only guaranteed for the same minor version.
+API compatibility is only guaranteed for the same minor version.
 
 The communication with the Fortran API uses the `error_type` and `structure_type` of the modular computation tool chain library (mctc-lib) to handle errors and represent geometries, respectively.
 
 
 #### Building Vasp with support for D4
 
-To use ``dftd4`` in Vasp the compatibility layer for the 2.5.x API has to be enable with ``-Dapi_v2=true`` (meson) or ``-DWITH_API_V2=ON`` (CMake).
-It is important to build ``dftd4`` with the same Fortran compiler you build Vasp with.
-
-After you completed the installation of ``dftd4``, make sure it is findable by ``pkg-config``, you can check by running:
-
-```
-pkg-config --modversion dftd4
-```
-
-If your ``dftd4`` installation is not findable, you have to update your environment variables.
-One option is to provide a module file for your ``dftd4`` installation.
-The example module file below can be placed in your ``MODULEPATH`` to provide access to an installation in ``~/opt/dftd4/4.0.2``.
-Retry the above comment after loading the ``dftd4`` module and adjust the module file until ``pkg-config`` finds your installation.
-
-```lua
--- dftd4/4.0.2.lua
-local name = "dftd4"
-local version = "4.0.2"
-local prefix = pathJoin(os.getenv("HOME"), "opt", name, version)
-local libdir = "lib"  -- or lib64
-
-whatis("Name        : " .. name)
-whatis("Version     : " .. version)
-whatis("Description : Generally applicable charge dependent London dispersion correction")
-whatis("URL         : https://github.com/dftd4/dftd4")
-
-prepend_path("PATH", pathJoin(prefix, "bin"))
-prepend_path("MANPATH", pathJoin(prefix, "share", "man"))
-prepend_path("CPATH", pathJoin(prefix, "include"))
-prepend_path("LIBRARY_PATH", pathJoin(prefix, libdir))
-prepend_path("LD_LIBRARY_PATH", pathJoin(prefix, libdir))
-prepend_path("PKG_CONFIG_PATH", pathJoin(prefix, libdir, "pkgconfig"))
-```
-
-To enable support for D4 in Vasp add the following lines to the Makefile:
-
-```make
-CPP_OPTIONS += -DDFTD4
-LLIBS       += $(shell pkg-config --libs dftd4)
-INCS        += $(shell pkg-config --cflags dftd4)
-```
-
-Depending on how you built DFT-D4, DFT-D4's dependencies might not be properly recognized during the VASP build. Try to explicitly add them to the link line.
-
-```make
-CPP_OPTIONS += -DDFTD4
-LLIBS       += $(shell pkg-config --libs dftd4) -lmulticharge -lmctc-lib -lmstore
-INCS        += $(shell pkg-config --cflags dftd4)
-```
-
-If you still run into issues, check out [VASP-related issues](https://github.com/dftd4/dftd4/issues?q=label%3Avasp%20) on the ``dftd4`` issue tracker.
-
+To use ``dftd4`` in Vasp the compatibility layer for the 2.5.x API please use an earlier version of dftd4 (<5.0.0).
 
 ### C API
 
@@ -403,8 +352,16 @@ To evaluate a dispersion correction in C four objects are available:
 
 4. the damping parameters:
 
-   Damping parameter object determining the short-range behaviour of the dispersion correction.
-   Standard damping parameters like the rational damping are independent of the molecular structure and can easily be reused for several structures or easily exchanged.
+   Damping parameter object parametrize the short-range damping of the dispersion correction.
+   Damping parameters are required for setting up a damping function and can be reused for several damping functions provided the appropriate parameters are set (three-body damping parameters set to zero deactivate the three-body dispersion).
+   Standard damping parameters are independent of the molecular structure and can easily be reused for several structures or easily exchanged.
+
+5. the damping functions:
+
+   The damping function object determines the short-range behaviour of the dispersion correction.
+   A damping function contains a two-body and (optional) three-body damping functions, as well as a damping parameter object which contains the paramterization of both functions. 
+   The damping functions can be assembled in any combination and can be reused for several calculations with different structures or dispersion models.
+   Dispersion models have a default damping function, but can be used also with any other damping function after providing the necessary damping parameters.
 
 The user is responsible for creating and deleting the objects to avoid memory leaks.
 For convenience the type-generic macro ``dftd4_delete`` is available to free any memory allocation made in the library.

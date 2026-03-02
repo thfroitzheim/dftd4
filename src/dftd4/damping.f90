@@ -15,153 +15,141 @@
 ! You should have received a copy of the Lesser GNU General Public License
 ! along with dftd4.  If not, see <https://www.gnu.org/licenses/>.
 
-!> Generic interface to define damping functions for the DFT-D models
+!> @dir dftd4/damping
+!> Contains the damping functions for the DFT-D models
+
+!> @file dftd4/damping.f90
+!> Reexports of the damping functions. 
+
+!> Proxy module for handling the damping functions
 module dftd4_damping
-   use mctc_env, only : wp
+   use dftd4_damping_cso, only : cso_damping_twobody, new_cso_damping_twobody
+   use dftd4_damping_koide, only : koide_damping_twobody, new_koide_damping_twobody
+   use dftd4_damping_mzero, only : mzero_damping_twobody, new_mzero_damping_twobody
+   use dftd4_damping_optpower, only : optpower_damping_twobody, new_optpower_damping_twobody
+   use dftd4_damping_rational, only : rational_damping_twobody, rational_damping_threebody, &
+      & new_rational_damping_twobody, new_rational_damping_threebody
+   use dftd4_damping_screened, only : screened_damping_twobody, screened_damping_threebody, &
+      & new_screened_damping_twobody, new_screened_damping_threebody
+   use dftd4_damping_type, only : damping_type, damping_twobody, damping_threebody, &
+      & twobody_damping_function, threebody_damping_function
+   use dftd4_damping_zero, only : zero_damping_twobody, zero_damping_threebody, &
+      & zero_avg_damping_threebody, new_zero_damping_twobody, new_zero_damping_threebody, &
+      & new_zero_avg_damping_threebody
+   use mctc_env, only : error_type, fatal_error, wp
    implicit none
    private
 
-   public :: damping_param
-
-   !> Abstract base type for damping parameterizations (undamped case)
-   type, abstract :: damping_param
-      !> Scaling factor for C6/R^6 term
-      real(wp) :: s6 = 1.0_wp
-      !> Scaling factor for C8/R^8 term
-      real(wp) :: s8
-      !> Scaling factor for C9/R^9 term
-      real(wp) :: s9 = 1.0_wp
-      !> Linear damping radius dependence
-      real(wp) :: a1
-      !> Constant damping radius shift
-      real(wp) :: a2
-      !> Zero-damping parameter
-      real(wp) :: alp = 16.0_wp
-   contains
-      !> Evaluate two-body damping factor
-      procedure :: get_2b_damp
-      !> Evaluate two-body damping factor with derivarives
-      procedure :: get_2b_derivs
-      !> Evaluate three-body damping factor
-      procedure :: get_3b_damp
-      !> Evaluate three-body damping factor with derivarives
-      procedure :: get_3b_derivs
-   end type damping_param
+   public :: damping_type, damping_twobody, damping_threebody, new_damping
+   public :: twobody_damping_function, threebody_damping_function
+   public :: cso_damping_twobody
+   public :: koide_damping_twobody
+   public :: mzero_damping_twobody
+   public :: optpower_damping_twobody
+   public :: rational_damping_twobody, rational_damping_threebody
+   public :: screened_damping_twobody, screened_damping_threebody
+   public :: zero_damping_twobody, zero_damping_threebody, zero_avg_damping_threebody
 
 contains
 
-!> Evaluate two-body damping factor
-pure subroutine get_2b_damp(self, r2, rdamp, d6, d8)
-   !> Damping parameters
-   class(damping_param), intent(in) :: self
-   !> Square of interatomic distance
-   real(wp), intent(in) :: r2
-   !> Damping radius
-   real(wp), intent(in) :: rdamp
-   !> Damping factor for C6/R^6 term
-   real(wp), intent(out) :: d6
-   !> Damping factor for C8/R^8 term
-   real(wp), intent(out) :: d8
+subroutine new_damping(error, damp, damping_2b, damping_3b)
+   !> Error handling
+   type(error_type), allocatable, intent(out) :: error
+   !> Damping object
+   class(damping_type), intent(out) :: damp
+   !> Type of two-body damping function to use
+   integer, intent(in) :: damping_2b
+   !> Type of three-body damping function to use
+   integer, intent(in) :: damping_3b
 
-   d6 = 1.0_wp / r2**3
-   d8 = 1.0_wp / r2**4
+   ! Select the two-body damping function
+   select case(damping_2b)
+   case(twobody_damping_function%rational)
+      block
+         type(rational_damping_twobody), allocatable :: tmp
+         allocate(tmp)
+         call new_rational_damping_twobody(tmp)
+         call move_alloc(tmp, damp%damping_2b)
+      end block
+   case(twobody_damping_function%screened)
+      block
+         type(screened_damping_twobody), allocatable :: tmp
+         allocate(tmp)
+         call new_screened_damping_twobody(tmp)
+         call move_alloc(tmp, damp%damping_2b)
+      end block
+   case(twobody_damping_function%zero)
+      block
+         type(zero_damping_twobody), allocatable :: tmp
+         allocate(tmp)
+         call new_zero_damping_twobody(tmp)
+         call move_alloc(tmp, damp%damping_2b)
+      end block
+   case(twobody_damping_function%mzero)
+      block
+         type(mzero_damping_twobody), allocatable :: tmp
+         allocate(tmp)
+         call new_mzero_damping_twobody(tmp)
+         call move_alloc(tmp, damp%damping_2b)
+      end block
+   case(twobody_damping_function%optpower)
+      block
+         type(optpower_damping_twobody), allocatable :: tmp
+         allocate(tmp)
+         call new_optpower_damping_twobody(tmp)
+         call move_alloc(tmp, damp%damping_2b)
+      end block
+   case(twobody_damping_function%cso)
+      block
+         type(cso_damping_twobody), allocatable :: tmp
+         allocate(tmp)
+         call new_cso_damping_twobody(tmp)
+         call move_alloc(tmp, damp%damping_2b)
+      end block
+   case(twobody_damping_function%koide)
+      block
+         type(koide_damping_twobody), allocatable :: tmp
+         allocate(tmp)
+         call new_koide_damping_twobody(tmp)
+         call move_alloc(tmp, damp%damping_2b)
+      end block
+   case default
+      call fatal_error(error, "Unsupported option for the two-body damping function.")
+      return
+   end select
 
-end subroutine get_2b_damp
+   ! Select the optional three-body damping function
+   select case(damping_3b)
+   case(threebody_damping_function%rational)
+      block
+         type(rational_damping_threebody), allocatable :: tmp
+         allocate(tmp)
+         call new_rational_damping_threebody(tmp)
+         call move_alloc(tmp, damp%damping_3b)
+      end block
+   case(threebody_damping_function%screened)
+      block
+         type(screened_damping_threebody), allocatable :: tmp
+         allocate(tmp)
+         call new_screened_damping_threebody(tmp)
+         call move_alloc(tmp, damp%damping_3b)
+      end block
+   case(threebody_damping_function%zero)
+      block
+         type(zero_damping_threebody), allocatable :: tmp
+         allocate(tmp)
+         call new_zero_damping_threebody(tmp)
+         call move_alloc(tmp, damp%damping_3b)
+      end block
+   case(threebody_damping_function%zero_avg)
+      block
+         type(zero_avg_damping_threebody), allocatable :: tmp
+         allocate(tmp)
+         call new_zero_avg_damping_threebody(tmp)
+         call move_alloc(tmp, damp%damping_3b)
+      end block
+   end select
 
-!> Evaluate two-body damping factor with derivarives
-pure subroutine get_2b_derivs(self, r2, rdamp, d6, d8, d6dr, d8dr)
-   !> Damping parameters
-   class(damping_param), intent(in) :: self
-   !> Square of interatomic distance
-   real(wp), intent(in) :: r2
-   !> Damping radius
-   real(wp), intent(in) :: rdamp
-   !> Damping factor for C6/R^6 term
-   real(wp), intent(out) :: d6
-   !> Damping factor for C8/R^8 term
-   real(wp), intent(out) :: d8
-   !> Derivative of damping factor for C6/R^6 w.r.t the interatomic distance
-   real(wp), intent(out) :: d6dr
-   !> Derivative of damping factor for C8/R^8 w.r.t the interatomic distance
-   real(wp), intent(out) :: d8dr
-
-   d6 = 1.0_wp / r2**3
-   d8 = 1.0_wp / r2**4
-
-   d6dr = -6*r2**2*d6**2
-   d8dr = -8*r2**3*d8**2
-
-end subroutine get_2b_derivs
-
-!> Evaluate three-body damping factor
-pure subroutine get_3b_damp(self, r, r2ij, r2ik, r2jk, &
-   & rdamp, rdampij, rdampik, rdampjk, d9)
-   !> Rational damping parameters
-   class(damping_param), intent(in) :: self
-   !> Product of pairwise interatomic distances
-   real(wp), intent(in) :: r
-   !> Square of interatomic distance between atoms i and j
-   real(wp), intent(in) :: r2ij
-   !> Square of interatomic distance between atoms i and k
-   real(wp), intent(in) :: r2ik
-   !> Square of interatomic distance between atoms j and k
-   real(wp), intent(in) :: r2jk
-   !> Product of pairwise damping radii
-   real(wp), intent(in) :: rdamp
-   !> Pairwise damping radius of atoms i and j
-   real(wp), intent(in) :: rdampij
-   !> Pairwise damping radius of atoms i and k
-   real(wp), intent(in) :: rdampik
-   !> Pairwise damping radius of atoms j and k
-   real(wp), intent(in) :: rdampjk
-   !> Damping factor for C9/R^9 term
-   real(wp), intent(out) :: d9
-
-   d9 = 1.0_wp / r**3
-
-end subroutine get_3b_damp
-
-!> Evaluate three-body damping factor
-pure subroutine get_3b_derivs(self, r, r2ij, r2ik, r2jk, &
-   & rdamp, rdampij, rdampik, rdampjk, d9, d9drij, d9drik, d9drjk)
-   !> Rational damping parameters
-   class(damping_param), intent(in) :: self
-   !> Product of pairwise interatomic distances
-   real(wp), intent(in) :: r
-   !> Square of interatomic distance between atoms i and j
-   real(wp), intent(in) :: r2ij
-   !> Square of interatomic distance between atoms i and k
-   real(wp), intent(in) :: r2ik
-   !> Square of interatomic distance between atoms j and k
-   real(wp), intent(in) :: r2jk
-   !> Product of pairwise damping radii
-   real(wp), intent(in) :: rdamp
-   !> Pairwise damping radius of atoms i and j
-   real(wp), intent(in) :: rdampij
-   !> Pairwise damping radius of atoms i and k
-   real(wp), intent(in) :: rdampik
-   !> Pairwise damping radius of atoms j and k
-   real(wp), intent(in) :: rdampjk
-   !> Damping factor for C9/R^9 term
-   real(wp), intent(out) :: d9
-   !> Derivative of damping factor for C9/R^9 
-   !> w.r.t the interatomic distance between atoms i and j
-   real(wp), intent(out) :: d9drij
-   !> Derivative of damping factor for C9/R^9 
-   !> w.r.t the interatomic distance between atoms i and k
-   real(wp), intent(out) :: d9drik
-   !> Derivative of damping factor for C9/R^9 
-   !> w.r.t the interatomic distance between atoms j and k
-   real(wp), intent(out) :: d9drjk
-
-   real(wp) :: dftmp
-
-   d9 = 1.0_wp / r**3
-
-   d9drij = -3 * d9 / r2ij
-   d9drik = -3 * d9 / r2ik
-   d9drjk = -3 * d9 / r2jk
-
-end subroutine get_3b_derivs
+end subroutine new_damping
 
 end module dftd4_damping

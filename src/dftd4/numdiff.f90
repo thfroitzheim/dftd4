@@ -17,9 +17,10 @@
 !> Numerical differentation of DFT-D4 model
 module dftd4_numdiff
    use dftd4_cutoff, only : realspace_cutoff
-   use dftd4_damping, only : damping_param
+   use dftd4_damping, only : damping_type
    use dftd4_disp, only : get_dispersion
    use dftd4_model, only : dispersion_model
+   use dftd4_param, only : param_type
    use mctc_env, only : wp
    use mctc_io, only : structure_type
    implicit none
@@ -32,17 +33,20 @@ contains
 
 
 !> Evaluate hessian matrix by numerical differention
-subroutine get_dispersion_hessian(mol, disp, param, cutoff, hessian)
+subroutine get_dispersion_hessian(mol, disp, damp, param, cutoff, hessian)
    !DEC$ ATTRIBUTES DLLEXPORT :: get_dispersion_hessian
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    !> Dispersion model
    class(dispersion_model), intent(in) :: disp
 
+   !> Damping function
+   type(damping_type), intent(in) :: damp
+
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
 
    !> Realspace cutoffs
    type(realspace_cutoff), intent(in) :: cutoff
@@ -59,17 +63,17 @@ subroutine get_dispersion_hessian(mol, disp, param, cutoff, hessian)
    hessian(:, :, :, :) = 0.0_wp
    !$omp parallel default(none) &
    !$omp private(iat, ix, displ, er, el, gr, gl, sr, sl) &
-   !$omp shared(mol, disp, param, cutoff, hessian)
+   !$omp shared(mol, disp, damp, param, cutoff, hessian)
    displ = mol
    allocate(gl(3, mol%nat), gr(3, mol%nat), sl(3, 3), sr(3, 3))
    !$omp do schedule(dynamic) collapse(2)
    do iat = 1, mol%nat
       do ix = 1, 3
          displ%xyz(ix, iat) = mol%xyz(ix, iat) + step
-         call get_dispersion(displ, disp, param, cutoff, el, gl, sl)
+         call get_dispersion(displ, disp, damp, param, cutoff, el, gl, sl)
 
          displ%xyz(ix, iat) = mol%xyz(ix, iat) - step
-         call get_dispersion(displ, disp, param, cutoff, er, gr, sr)
+         call get_dispersion(displ, disp, damp, param, cutoff, er, gr, sr)
 
          displ%xyz(ix, iat) = mol%xyz(ix, iat)
          hessian(:, :, ix, iat) = (gl - gr) / (2 * step)

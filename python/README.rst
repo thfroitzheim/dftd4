@@ -10,7 +10,7 @@ A more pythonic interface is provided in the ``dftd4.interface`` module which ca
 
 .. code:: python
 
-   >>> from dftd4.interface import DampingParam, DispersionModel
+   >>> from dftd4.interface import DampingFunction, DampingParam, DispersionModel
    >>> import numpy as np
    >>> numbers = np.array([1, 1, 6, 5, 1, 15, 8, 17, 13, 15, 5, 1, 9, 15, 1, 15])
    >>> positions = np.array([  # Coordinates in Bohr
@@ -32,7 +32,9 @@ A more pythonic interface is provided in the ``dftd4.interface`` module which ca
    ...     [+2.85007173009739, -2.64884892757600, +0.71010806424206],
    ... ])
    >>> model = DispersionModel(numbers, positions)
-   >>> res = model.get_dispersion(DampingParam(method="scan"), grad=False)
+   >>> damp = DampingFunction(model="d4")
+   >>> param = DampingParam(method="scan", model="d4")
+   >>> res = model.get_dispersion(damp, param, grad=False)
    >>> res.get("energy")  # Results in atomic units
    -0.005328888532435093
    >>> res.update(**model.get_properties())  # also allows access to properties

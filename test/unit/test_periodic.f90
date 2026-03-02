@@ -56,7 +56,7 @@ subroutine collect_periodic(testsuite)
 end subroutine collect_periodic
 
 
-subroutine test_dftd4_gen(error, mol, d4, param, ref)
+subroutine test_dftd4_gen(error, mol, d4, damp, param, ref)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -67,15 +67,18 @@ subroutine test_dftd4_gen(error, mol, d4, param, ref)
    !> Dispersion model
    class(dispersion_model), intent(in) :: d4
 
+   !> Damping function
+   type(damping_type), intent(in) :: damp
+
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
 
    !> Expected dispersion energy
    real(wp), intent(in) :: ref
 
    real(wp) :: energy
 
-   call get_dispersion(mol, d4, param, cutoff, energy)
+   call get_dispersion(mol, d4, damp, param, cutoff, energy)
 
    call check(error, energy, ref, thr=thr)
    if (allocated(error)) then
@@ -85,7 +88,7 @@ subroutine test_dftd4_gen(error, mol, d4, param, ref)
 end subroutine test_dftd4_gen
 
 
-subroutine test_numgrad(error, mol, d4, param)
+subroutine test_numgrad(error, mol, d4, damp, param)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -96,8 +99,11 @@ subroutine test_numgrad(error, mol, d4, param)
    !> Dispersion model
    class(dispersion_model), intent(in) :: d4
 
+   !> Damping function
+   type(damping_type), intent(in) :: damp
+
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
 
    integer :: iat, ic
    real(wp) :: energy, er, el, sigma(3, 3)
@@ -109,15 +115,15 @@ subroutine test_numgrad(error, mol, d4, param)
    do iat = 1, mol%nat
       do ic = 1, 3
          mol%xyz(ic, iat) = mol%xyz(ic, iat) + step
-         call get_dispersion(mol, d4, param, cutoff, er)
+         call get_dispersion(mol, d4, damp, param, cutoff, er)
          mol%xyz(ic, iat) = mol%xyz(ic, iat) - 2*step
-         call get_dispersion(mol, d4, param, cutoff, el)
+         call get_dispersion(mol, d4, damp, param, cutoff, el)
          mol%xyz(ic, iat) = mol%xyz(ic, iat) + step
          numgrad(ic, iat) = 0.5_wp*(er - el)/step
       end do
    end do
 
-   call get_dispersion(mol, d4, param, cutoff, energy, gradient, sigma)
+   call get_dispersion(mol, d4, damp, param, cutoff, energy, gradient, sigma)
 
    if (any(abs(gradient - numgrad) > thr2)) then
       call test_failed(error, "Gradient of dispersion energy does not match")
@@ -127,7 +133,7 @@ subroutine test_numgrad(error, mol, d4, param)
 end subroutine test_numgrad
 
 
-subroutine test_numsigma(error, mol, d4, param)
+subroutine test_numsigma(error, mol, d4, damp, param)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -138,8 +144,11 @@ subroutine test_numsigma(error, mol, d4, param)
    !> Dispersion model
    class(dispersion_model), intent(in) :: d4
 
+   !> Damping function
+   type(damping_type), intent(in) :: damp
+
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
 
    integer :: ic, jc
    real(wp) :: energy, er, el, sigma(3, 3), eps(3, 3), numsigma(3, 3), lattice(3, 3)
@@ -158,11 +167,11 @@ subroutine test_numsigma(error, mol, d4, param)
          eps(jc, ic) = eps(jc, ic) + step
          mol%xyz(:, :) = matmul(eps, xyz)
          mol%lattice(:, :) = matmul(eps, lattice)
-         call get_dispersion(mol, d4, param, cutoff, er)
+         call get_dispersion(mol, d4, damp, param, cutoff, er)
          eps(jc, ic) = eps(jc, ic) - 2*step
          mol%xyz(:, :) = matmul(eps, xyz)
          mol%lattice(:, :) = matmul(eps, lattice)
-         call get_dispersion(mol, d4, param, cutoff, el)
+         call get_dispersion(mol, d4, damp, param, cutoff, el)
          eps(jc, ic) = eps(jc, ic) + step
          mol%xyz(:, :) = xyz
          mol%lattice(:, :) = lattice
@@ -170,7 +179,7 @@ subroutine test_numsigma(error, mol, d4, param)
       end do
    end do
 
-   call get_dispersion(mol, d4, param, cutoff, energy, gradient, sigma)
+   call get_dispersion(mol, d4, damp, param, cutoff, energy, gradient, sigma)
 
    if (any(abs(sigma - numsigma) > thr3)) then
       call test_failed(error, "Strain derivatives do not match")
@@ -187,13 +196,19 @@ subroutine test_pbed4_acetic(error)
 
    type(structure_type) :: mol
    type(d4_model) :: d4
-   type(rational_damping_param) :: param = rational_damping_param(&
+   type(param_type) :: param
+   type(damping_type) :: damp
+
+   param = param_type(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp )
+      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp)
 
    call get_structure(mol, "X23", "acetic")
    call new_d4_model(error, d4, mol)
-   call test_dftd4_gen(error, mol, d4, param, -6.6969773229895183E-002_wp)
+   if (allocated(error)) return
+   call new_damping(error, damp, d4%default_damping_2b, d4%default_damping_3b)
+   if (allocated(error)) return
+   call test_dftd4_gen(error, mol, d4, damp, param, -6.6969773229895183E-002_wp)
 
 end subroutine test_pbed4_acetic
 
@@ -204,13 +219,19 @@ subroutine test_pbed4s_acetic(error)
 
    type(structure_type) :: mol
    type(d4s_model) :: d4s
-   type(rational_damping_param) :: param = rational_damping_param(&
+   type(param_type) :: param
+   type(damping_type) :: damp
+
+   param = param_type(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp )
+      & s8 = 0.95948085_wp, a1 = 0.38574991_wp, a2 = 4.80688534_wp)
 
    call get_structure(mol, "X23", "acetic")
    call new_d4s_model(error, d4s, mol)
-   call test_dftd4_gen(error, mol, d4s, param, -6.8611894281210548E-002_wp)
+   if (allocated(error)) return
+   call new_damping(error, damp, d4s%default_damping_2b, d4s%default_damping_3b)
+   if (allocated(error)) return
+   call test_dftd4_gen(error, mol, d4s, damp, param, -6.8611894281210548E-002_wp)
 
 end subroutine test_pbed4s_acetic
 
@@ -222,13 +243,19 @@ subroutine test_blypd4_adaman(error)
 
    type(structure_type) :: mol
    type(d4_model) :: d4
-   type(rational_damping_param) :: param = rational_damping_param(&
+   type(param_type) :: param
+   type(damping_type) :: damp
+
+   param = param_type(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 2.34076671_wp, a1 = 0.44488865_wp, a2 = 4.09330090_wp )
+      & s8 = 2.34076671_wp, a1 = 0.44488865_wp, a2 = 4.09330090_wp)
 
    call get_structure(mol, "X23", "adaman")
    call new_d4_model(error, d4, mol)
-   call test_dftd4_gen(error, mol, d4, param, -0.23629687693703993_wp)
+   if (allocated(error)) return
+   call new_damping(error, damp, d4%default_damping_2b, d4%default_damping_3b)
+   if (allocated(error)) return
+   call test_dftd4_gen(error, mol, d4, damp, param, -0.23629687693703993_wp)
 
 end subroutine test_blypd4_adaman
 
@@ -239,13 +266,19 @@ subroutine test_blypd4s_adaman(error)
 
    type(structure_type) :: mol
    type(d4s_model) :: d4s
-   type(rational_damping_param) :: param = rational_damping_param(&
+   type(param_type) :: param
+   type(damping_type) :: damp
+
+   param = param_type(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 2.34076671_wp, a1 = 0.44488865_wp, a2 = 4.09330090_wp )
+      & s8 = 2.34076671_wp, a1 = 0.44488865_wp, a2 = 4.09330090_wp)
 
    call get_structure(mol, "X23", "adaman")
    call new_d4s_model(error, d4s, mol)
-   call test_dftd4_gen(error, mol, d4s, param, -0.25250595410032312_wp)
+   if (allocated(error)) return
+   call new_damping(error, damp, d4s%default_damping_2b, d4s%default_damping_3b)
+   if (allocated(error)) return
+   call test_dftd4_gen(error, mol, d4s, damp, param, -0.25250595410032312_wp)
 
 end subroutine test_blypd4s_adaman
 
@@ -257,13 +290,19 @@ subroutine test_tpssd4_ammonia(error)
 
    type(structure_type) :: mol
    type(d4_model) :: d4
-   type(rational_damping_param) :: param = rational_damping_param(&
+   type(param_type) :: param
+   type(damping_type) :: damp
+
+   param = param_type(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.76596355_wp, a1 = 0.42822303_wp, a2 = 4.54257102_wp )
+      & s8 = 1.76596355_wp, a1 = 0.42822303_wp, a2 = 4.54257102_wp)
 
    call get_structure(mol, "X23", "ammonia")
    call new_d4_model(error, d4, mol)
-   call test_numgrad(error, mol, d4, param)
+   if (allocated(error)) return
+   call new_damping(error, damp, d4%default_damping_2b, d4%default_damping_3b)
+   if (allocated(error)) return
+   call test_numgrad(error, mol, d4, damp, param)
 
 end subroutine test_tpssd4_ammonia
 
@@ -274,13 +313,19 @@ subroutine test_tpssd4s_ammonia(error)
 
    type(structure_type) :: mol
    type(d4s_model) :: d4s
-   type(rational_damping_param) :: param = rational_damping_param(&
+   type(param_type) :: param
+   type(damping_type) :: damp
+
+   param = param_type(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.76596355_wp, a1 = 0.42822303_wp, a2 = 4.54257102_wp )
+      & s8 = 1.76596355_wp, a1 = 0.42822303_wp, a2 = 4.54257102_wp)
 
    call get_structure(mol, "X23", "ammonia")
    call new_d4s_model(error, d4s, mol)
-   call test_numgrad(error, mol, d4s, param)
+   if (allocated(error)) return
+   call new_damping(error, damp, d4s%default_damping_2b, d4s%default_damping_3b)
+   if (allocated(error)) return
+   call test_numgrad(error, mol, d4s, damp, param)
 
 end subroutine test_tpssd4s_ammonia
 
@@ -292,13 +337,19 @@ subroutine test_scand4_anthracene(error)
 
    type(structure_type) :: mol
    type(d4_model) :: d4
-   type(rational_damping_param) :: param = rational_damping_param(&
+   type(param_type) :: param
+   type(damping_type) :: damp
+
+   param = param_type(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.46126056_wp, a1 = 0.62930855_wp, a2 = 6.31284039_wp )
+      & s8 = 1.46126056_wp, a1 = 0.62930855_wp, a2 = 6.31284039_wp)
 
    call get_structure(mol, "X23", "anthracene")
    call new_d4_model(error, d4, mol)
-   call test_numsigma(error, mol, d4, param)
+   if (allocated(error)) return
+   call new_damping(error, damp, d4%default_damping_2b, d4%default_damping_3b)
+   if (allocated(error)) return
+   call test_numsigma(error, mol, d4, damp, param)
 
 end subroutine test_scand4_anthracene
 
@@ -309,13 +360,19 @@ subroutine test_scand4s_anthracene(error)
 
    type(structure_type) :: mol
    type(d4s_model) :: d4s
-   type(rational_damping_param) :: param = rational_damping_param(&
+   type(param_type) :: param
+   type(damping_type) :: damp
+
+   param = param_type(&
       & s6 = 1.0_wp, s9 = 0.0_wp, alp = 16.0_wp, &
-      & s8 = 1.46126056_wp, a1 = 0.62930855_wp, a2 = 6.31284039_wp )
+      & s8 = 1.46126056_wp, a1 = 0.62930855_wp, a2 = 6.31284039_wp)
 
    call get_structure(mol, "X23", "anthracene")
    call new_d4s_model(error, d4s, mol)
-   call test_numsigma(error, mol, d4s, param)
+   if (allocated(error)) return
+   call new_damping(error, damp, d4s%default_damping_2b, d4s%default_damping_3b)
+   if (allocated(error)) return
+   call test_numsigma(error, mol, d4s, damp, param)
 
 end subroutine test_scand4s_anthracene
 

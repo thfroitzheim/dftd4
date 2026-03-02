@@ -76,6 +76,29 @@ def test_energy_r2scan_d4() -> None:
     assert approx(atomic_result.return_result, abs=thr) == -0.005001101011286166
 
 
+def test_energy_explicit_damping_hint() -> None:
+    thr = 1e-9
+
+    atomic_input = qcel.models.AtomicInput(
+        molecule=get_example_molecule(),
+        driver="energy",
+        model={
+            "method": "r2scan",
+        },
+        keywords={
+            "damping_hint": {
+                "2b": "rational",
+                "3b": "zero-avg",
+            }
+        },
+    )
+
+    atomic_result = run_qcschema(atomic_input)
+
+    assert atomic_result.success
+    assert approx(atomic_result.return_result, abs=thr) == -0.005001101011286166
+
+
 def test_energy_r2scan_d4s() -> None:
     thr = 1e-9
 
@@ -142,6 +165,31 @@ def test_energy_lh20t_d4() -> None:
 
     assert atomic_result.success
     assert approx(atomic_result.return_result, abs=thr) == -0.010064263146257654
+
+
+def test_energy_lh20t_d4_noatm() -> None:
+    thr = 1e-9
+
+    atomic_input = qcel.models.AtomicInput(
+        molecule=get_example_molecule(),
+        driver="energy",
+        model={"method": ""},
+        keywords={
+            "params_tweaks": {
+                "s8": 0.113,
+                "a1": 0.479,
+                "a2": 4.635,
+            },
+            "damping_hint": {
+                "3b": "none"
+            }, 
+        },
+    )
+
+    atomic_result = run_qcschema(atomic_input)
+
+    assert atomic_result.success
+    assert approx(atomic_result.return_result, abs=thr) == -0.010048292243378118
 
 
 def test_energy_lh20t_d4s() -> None:
@@ -434,7 +482,7 @@ def test_error_nomethod() -> None:
     )
     error = qcel.models.ComputeError(
         error_type="input error",
-        error_message="Functional 'this-method-does-not-exist' not known",
+        error_message="No D4 damping parameters available for this functional.",
     )
 
     atomic_result = run_qcschema(atomic_input)

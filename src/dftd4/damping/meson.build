@@ -15,5 +15,12 @@
 # along with dftd4.  If not, see <https://www.gnu.org/licenses/>.
 
 srcs += files(
+  'cso.f90',
+  'koide.f90',
+  'mzero.f90',
+  'optpower.f90',
   'rational.f90',
+  'screened.f90',
+  'type.f90',
+  'zero.f90',
 )

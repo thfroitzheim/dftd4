@@ -20,10 +20,11 @@ module dftd4_model_d4s
    use ieee_arithmetic, only : ieee_is_nan
    use dftd4_model_type, only : dispersion_model, d4_qmod
    use dftd4_cache, only : dispersion_cache
+   use dftd4_damping_type, only : twobody_damping_function, threebody_damping_function
    use dftd4_data, only : get_covalent_rad, get_r4r2_val, get_wfpair_val, &
       & get_effective_charge, get_electronegativity, get_hardness
-   use dftd4_reference
-   use dftd4_model_utils
+   use dftd4_model_reference_d4
+   use dftd4_model_utils, only : is_exceptional, weight_cn, zeta, dzeta
    use dftd4_integrator_type, only : integrator_type
    use dftd4_integrator_trapezoid, only : trapezoid_integrator, new_trapezoid_integrator
    use mctc_env, only : error_type, fatal_error, wp
@@ -80,6 +81,12 @@ module dftd4_model_d4s
    !> Number of imaginary frequency integration points
    integer, parameter :: ngrid = 23
 
+   !> Default two-body damping function for D4S
+   integer, parameter :: default_damping_2b = twobody_damping_function%rational
+
+   !> Default three-body damping function for D4S
+   integer, parameter :: default_damping_3b = threebody_damping_function%zero_avg
+
    !> Imaginary frequencies for integration
    real(wp), parameter :: freq(ngrid) = [ &
       & 0.000001_wp, 0.050000_wp, 0.100000_wp, &
@@ -90,6 +97,8 @@ module dftd4_model_d4s
       & 1.800000_wp, 2.000000_wp, 2.500000_wp, &
       & 3.000000_wp, 4.000000_wp, 5.000000_wp, &
       & 7.500000_wp, 10.00000_wp]
+
+   character(len=*), parameter :: d4s_label = "D4S"
 
 contains
 
@@ -102,7 +111,7 @@ subroutine new_d4s_model(error, d4, mol, ga, gc, qmod)
    type(d4s_model), intent(out) :: d4
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -129,6 +138,11 @@ subroutine new_d4s_model(error, d4, mol, ga, gc, qmod)
          return
       end if
    end do
+
+   d4%label = d4s_label
+
+   d4%default_damping_2b = default_damping_2b
+   d4%default_damping_3b = default_damping_3b
 
    d4%ncoup = mol%nat
    d4%ngrid = ngrid
@@ -271,7 +285,7 @@ subroutine update(self, mol, cache, cn, q, grad, only_c6)
    class(d4s_model), intent(in) :: self
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    !> Dispersion cache to populate
    type(dispersion_cache), intent(inout) :: cache

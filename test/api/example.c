@@ -97,6 +97,7 @@ int test_example(void)
 
     dftd4_structure mol;
     dftd4_model disp;
+    dftd4_damping damp;
     dftd4_param param;
 
     error = dftd4_new_error();
@@ -127,7 +128,8 @@ int test_example(void)
     }
 
     // PBE-D4
-    param = dftd4_new_rational_damping(error, 1.0, 0.95948085, 0.0, 0.38574991, 4.80688534, 16.0);
+    param = dftd4_new_param(1.0, 0.95948085, 0.0, 0.38574991, 4.80688534, 
+        0.0, 0.0, 0.0, 0.0, 0.0, 16.0, 0.0);
     if (dftd4_check_error(error)) {
         goto err;
     }
@@ -135,27 +137,32 @@ int test_example(void)
         goto err;
     }
 
-    dftd4_get_dispersion(error, mol, disp, param, &energy, NULL, NULL);
+    // Setup default damping functions for DFT-D4
+    damp = dftd4_new_default_damping(error, disp);
+    if (dftd4_check_error(error)) {
+       goto err;
+    }
+    dftd4_get_dispersion(error, mol, disp, damp, param, &energy, NULL, NULL);
     if (dftd4_check_error(error)) {
         goto err;
     }
-    dftd4_get_dispersion(error, mol, disp, param, &energy, gradient, sigma);
-    if (dftd4_check_error(error)) {
-        goto err;
-    }
-    dftd4_get_numerical_hessian(error, mol, disp, param, hessian);
+    dftd4_get_dispersion(error, mol, disp, damp, param, &energy, gradient, sigma);
     if (dftd4_check_error(error)) {
         goto err;
     }
 
-    dftd4_get_pairwise_dispersion(error, mol, disp, param, pair_disp2, pair_disp3);
+    dftd4_get_numerical_hessian(error, mol, disp, damp, param, hessian);
+    if (dftd4_check_error(error)) {
+        goto err;
+    }
+    dftd4_get_pairwise_dispersion(error, mol, disp, damp, param, pair_disp2, pair_disp3);
     if (dftd4_check_error(error)) {
         goto err;
     }
     dftd4_delete(param);
 
     // DSD-BLYP-D4-ATM
-    param = dftd4_load_rational_damping(error, "dsdblyp", true);
+    param = dftd4_load_default_param(error, "dsdblyp", disp);
     if (dftd4_check_error(error)) {
         goto err;
     }
@@ -163,15 +170,15 @@ int test_example(void)
         goto err;
     }
 
-    dftd4_get_dispersion(error, mol, disp, param, &energy, NULL, NULL);
+    dftd4_get_dispersion(error, mol, disp, damp, param, &energy, NULL, NULL);
     if (dftd4_check_error(error)) {
         goto err;
     }
-    dftd4_get_dispersion(error, mol, disp, param, &energy, gradient, sigma);
+    dftd4_get_dispersion(error, mol, disp, damp, param, &energy, gradient, sigma);
     if (dftd4_check_error(error)) {
         goto err;
     }
-    dftd4_get_numerical_hessian(error, mol, disp, param, hessian);
+    dftd4_get_numerical_hessian(error, mol, disp, damp, param, hessian);
     if (dftd4_check_error(error)) {
         goto err;
     }
@@ -187,7 +194,7 @@ int test_example(void)
         goto err;
     }
 
-    param = dftd4_load_rational_damping(error, "r2scan_3c", true);
+    param = dftd4_load_default_param(error, "r2scan_3c", disp);
     if (dftd4_check_error(error)) {
         goto err;
     }
@@ -195,20 +202,51 @@ int test_example(void)
         goto err;
     }
 
-    dftd4_get_dispersion(error, mol, disp, param, &energy, NULL, NULL);
+    dftd4_get_dispersion(error, mol, disp, damp, param, &energy, NULL, NULL);
     if (dftd4_check_error(error)) {
         goto err;
     }
 
-    dftd4_get_dispersion(error, mol, disp, param, &energy, gradient, sigma);
+    dftd4_get_dispersion(error, mol, disp, damp, param, &energy, gradient, sigma);
     if (dftd4_check_error(error)) {
         goto err;
     }
-    dftd4_get_numerical_hessian(error, mol, disp, param, hessian);
+    dftd4_get_numerical_hessian(error, mol, disp, damp, param, hessian);
     if (dftd4_check_error(error)) {
         goto err;
     }
     dftd4_delete(param);
+    dftd4_delete(damp);
+
+    // modified TPSSh-D4(sc)-ATM(sc)
+    param = dftd4_new_param(1.0, 1.76596355, 0.5, 0.42822303, 4.54257102, 0.6, 0.6, 
+      0.0, 0.0, 0.0, 16.0, 0.0);
+    if (dftd4_check_error(error)) {
+        goto err;
+    }
+    if (!param) {
+        goto err;
+    }
+
+    // Setup screened damping functions
+    damp = dftd4_new_damping(error, dftd4_damping_twobody_screened, dftd4_damping_threebody_screened);
+    if (dftd4_check_error(error)) {
+        goto err;
+    }
+    dftd4_check_params(error, damp, param);
+    if (dftd4_check_error(error)) {
+        goto err;
+    }
+    dftd4_get_dispersion(error, mol, disp, damp, param, &energy, NULL, NULL);
+    if (dftd4_check_error(error)) {
+        goto err;
+    }    
+    dftd4_get_dispersion(error, mol, disp, damp, param, &energy, gradient, sigma);
+    if (dftd4_check_error(error)) {
+        goto err;
+    }
+    dftd4_delete(param);
+    dftd4_delete(damp);
     dftd4_delete(disp);
 
     // Attempt to create custom d4 model

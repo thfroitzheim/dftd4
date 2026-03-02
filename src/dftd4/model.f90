@@ -19,16 +19,16 @@ module dftd4_model
    use mctc_env, only : wp, error_type, fatal_error
    use mctc_io, only : structure_type
    use dftd4_utils, only : lowercase
-   use dftd4_model_type, only : dispersion_model, d4_qmod
+   use dftd4_model_type, only : dispersion_model, dftd_models, d4_qmod
    use dftd4_model_d4, only : d4_model, new_d4_model
    use dftd4_model_d4s, only : d4s_model, new_d4s_model
    implicit none
    private
 
-   public :: dispersion_model, d4_qmod
+   public :: dispersion_model, dftd_models, d4_qmod
    public :: d4_model, new_d4_model
    public :: d4s_model, new_d4s_model
-   public :: new_dispersion_model
+   public :: new_dispersion_model, get_dispersion_model_id
 
 
 contains
@@ -91,5 +91,28 @@ subroutine new_dispersion_model(error, d4, mol, model, ga, gc, wf, qmod)
 
 end subroutine new_dispersion_model
 
+
+!> Return the dispersion model identifier
+subroutine get_dispersion_model_id(error, d4, model_id)
+
+   !> Error handling
+   type(error_type), allocatable, intent(out) :: error
+
+   !> Dispersion model
+   class(dispersion_model), intent(in) :: d4
+
+   !> Identifier of the dispersion model
+   integer, intent(out) :: model_id
+
+   select type(d4)
+   type is (d4_model)
+      model_id = dftd_models%d4
+   type is (d4s_model)
+      model_id = dftd_models%d4s
+   class default
+      call fatal_error(error, "Unknown dispersion model type")
+   end select
+
+end subroutine get_dispersion_model_id
 
 end module dftd4_model

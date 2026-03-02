@@ -19,9 +19,9 @@ module dftd4_output
    use mctc_io, only : structure_type
    use mctc_io_convert, only : autoaa, autokcal, autoev
    use mctc_io_math, only : matinv_3x3
-   use dftd4_damping, only : damping_param
-   use dftd4_damping_rational, only : rational_damping_param
+   use dftd4_damping, only : damping_type
    use dftd4_model, only : dispersion_model
+   use dftd4_param, only : param_type
    use dftd4_version, only : get_dftd4_version
    implicit none
    private
@@ -42,7 +42,7 @@ subroutine ascii_atomic_radii(unit, mol, disp)
    integer, intent(in) :: unit
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    !> Dispersion model
    class(dispersion_model), intent(in) :: disp
@@ -75,7 +75,7 @@ subroutine ascii_atomic_references(unit, mol, disp)
    integer, intent(in) :: unit
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    !> Dispersion model
    class(dispersion_model), intent(in) :: disp
@@ -124,7 +124,7 @@ subroutine ascii_system_properties(unit, mol, disp, cn, q, c6, alpha, alphaqq)
    integer, intent(in) :: unit
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    !> Dispersion model
    class(dispersion_model), intent(in) :: disp
@@ -184,7 +184,7 @@ subroutine ascii_results(unit, mol, energy, gradient, sigma)
    integer, intent(in) :: unit
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    real(wp), intent(in) :: energy
    real(wp), intent(in), optional :: gradient(:, :)
@@ -236,7 +236,7 @@ subroutine ascii_pairwise(unit, mol, pair_disp2, pair_disp3)
    integer, intent(in) :: unit
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    real(wp), intent(in) :: pair_disp2(:, :)
    real(wp), intent(in) :: pair_disp3(:, :)
@@ -281,40 +281,127 @@ subroutine ascii_pairwise(unit, mol, pair_disp2, pair_disp3)
 end subroutine ascii_pairwise
 
 
-subroutine ascii_damping_param(unit, param, method)
+subroutine ascii_damping_param(unit, verbosity, model, damp, param, method, modified)
    !DEC$ ATTRIBUTES DLLEXPORT :: ascii_damping_param
-
+   
    !> Unit for output
    integer, intent(in) :: unit
 
+   !> Level of verbosity
+   integer, intent(in) :: verbosity
+   
+   !> Dispersion model
+   class(dispersion_model), intent(in) :: model
+
+   !> Damping function
+   type(damping_type), intent(in) :: damp
+
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
 
    !> Method name
    character(len=*), intent(in), optional :: method
 
-   select type(param)
-   type is (rational_damping_param)
-      write(unit, '(a, ":", 1x)', advance="no") "Rational (Becke-Johnson) damping"
-      if (present(method)) then
-         write(unit, '(a, "-")', advance="no") method
-      end if
+   !> Flag indicating whether the parameters were modified via the CLI
+   logical, intent(in), optional :: modified
+
+   logical :: atm
+
+   ! Check for the ATM term
+   atm = .false.
+   if (allocated(param%s9)) then
       if (abs(param%s9) > 0) then
-         write(unit, '(a)') "D4-ATM"
-      else
-         write(unit, '(a)') "D4"
+         atm = .true.
       end if
-      write(unit, '(21("-"))')
-      write(unit, '(a4, t10, f10.4)') &
-         & "s6", param%s6, &
-         & "s8", param%s8, &
-         & "s9", param%s9, &
-         & "a1", param%a1, &
-         & "a2", param%a2, &
-         & "alp", param%alp
-      write(unit, '(20("-"))')
-      write(unit, '(a)')
-   end select
+   end if
+
+   ! Output the full method string including dispersion
+   if (present(method)) then
+      write(unit, '(a, ":", 1x)', advance="no") "Method"
+      write(unit, '(a, "-")', advance="no") method
+   end if
+
+   write(unit, '(a, "(")', advance="no") model%label
+   write(unit, '(a, ")")', advance="no") damp%damping_2b%label_short
+
+   if (atm) then
+      write(unit, '("-", a, "(")', advance="no") "ATM"
+      write(unit, '(a, ")")') damp%damping_3b%label_short
+   else
+      write(unit, '(a)') ""
+   end if
+
+   ! Specify two and three-body damping functions
+   if (verbosity > 2) then
+      if (allocated(damp%damping_2b)) then
+         write(unit, '(a, ":", 1x)', advance="no") "Two-body damping: "
+         write(unit, '(a, 1x)', advance="yes") damp%damping_2b%label
+      end if
+
+      if (allocated(damp%damping_3b)) then
+         write(unit, '(a, ":", 1x)', advance="no") "Three-body damping: "
+         write(unit, '(a, 1x)', advance="yes") damp%damping_3b%label
+      end if
+   end if
+
+   ! Output the damping parameters
+   write(unit, '(21("-"))')
+
+   if (allocated(param%s6)) then
+      write(unit, '(a4, t10, f10.4)') "s6", param%s6
+   end if
+   
+   if (allocated(param%s8)) then
+      write(unit, '(a4, t10, f10.4)') "s8", param%s8
+   end if
+   
+   if (allocated(param%s9)) then
+      write(unit, '(a4, t10, f10.4)') "s9", param%s9
+   end if
+
+   write(unit, '(a4, t10, f10.4)') "a1", param%a1
+   write(unit, '(a4, t10, f10.4)') "a2", param%a2
+
+   if (allocated(param%a3)) then
+      write(unit, '(a4, t10, f10.4)') "a3", param%a3
+   end if
+
+   if (allocated(param%a4)) then
+      write(unit, '(a4, t10, f10.4)') "a4", param%a4
+   end if
+
+   if (allocated(param%rs6)) then
+      write(unit, '(a4, t10, f10.4)') "rs6", param%rs6
+   end if
+
+   if (allocated(param%rs8)) then
+      write(unit, '(a4, t10, f10.4)') "rs8", param%rs8
+   end if
+
+   if (allocated(param%rs9)) then
+      write(unit, '(a4, t10, f10.4)') "rs9", param%rs9
+   end if
+
+   if (allocated(param%alp)) then
+      write(unit, '(a4, t10, f10.4)') "alp", param%alp
+   end if
+
+   if (allocated(param%bet)) then
+      write(unit, '(a4, t10, f10.4)') "bet", param%bet
+   end if
+
+   write(unit, '(20("-"))')
+
+   ! Add warning if the default parameters were modified via the CLI
+   if (verbosity > 1) then
+      if (present(modified) .and. present(method)) then
+         if (modified) then
+            write(unit, '(a)') "Warning: The default "//method//" damping parameters were modified."
+         end if
+      end if
+   end if
+   write(unit, '(a)')
+
 
 end subroutine ascii_damping_param
 

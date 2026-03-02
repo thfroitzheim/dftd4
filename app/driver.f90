@@ -20,14 +20,15 @@ module dftd4_driver
    use mctc_env, only : error_type, fatal_error, wp
    use mctc_io, only : structure_type, read_structure, filetype
    use dftd4, only : get_dispersion, realspace_cutoff, &
-      & damping_param, rational_damping_param, get_rational_damping, &
+      & damping_type, new_damping, get_damping_params, &
       & get_properties, get_pairwise_dispersion, get_dispersion_hessian, &
-      & dispersion_model, new_dispersion_model, d4_qmod
+      & dispersion_model, new_dispersion_model, d4_qmod, &
+      & get_dispersion_model_id
    use dftd4_output
    use dftd4_cli, only : cli_config, param_config, run_config
    use dftd4_help, only : header
-   use dftd4_param, only : functional_group, get_functionals, &
-      & get_functional_id, p_r2scan_3c
+   use dftd4_param, only : param_type, functional_group, get_functionals, &
+      & get_functional_id, p_r2scan_3c, p_default
    use dftd4_utils, only : lowercase, wrap_to_central_cell
    implicit none
    private
@@ -69,21 +70,23 @@ subroutine run_main(config, error)
    type(structure_type) :: mol
    character(len=:), allocatable :: filename
    character(len=:), allocatable :: functional
-   class(damping_param), allocatable :: param
+   type(damping_type) :: damp
+   type(param_type), allocatable :: param
    class(dispersion_model), allocatable :: d4
    real(wp) :: charge
    real(wp), allocatable :: energy, gradient(:, :), sigma(:, :), hessian(:, :, :, :)
    real(wp), allocatable :: pair_disp2(:, :), pair_disp3(:, :)
    real(wp), allocatable :: cn(:), q(:), c6(:, :), alpha(:), alphaqq(:)
-   real(wp), allocatable :: s9
    real(wp) :: ga, gc
-   integer :: stat, unit, is, id, charge_model
+   integer :: stat, unit, is, functional_id, charge_model
+   integer :: model_id, damping_2b, damping_3b
    logical :: exist
 
    if (config%verbosity > 1) then
       call header(output_unit)
    end if
 
+   ! Read molecular structure
    if (config%input == "-") then
       if (.not.allocated(config%input_format)) then
          call read_structure(mol, input_unit, filetype%xyz, error)
@@ -95,6 +98,7 @@ subroutine run_main(config, error)
    end if
    if (allocated(error)) return
 
+   ! Determine molecular charge
    if (allocated(config%charge)) then
       mol%charge = config%charge
    else
@@ -118,51 +122,26 @@ subroutine run_main(config, error)
       call wrap_to_central_cell(mol%xyz, mol%lattice, mol%periodic)
    end if
 
+   ! Determine the used method/functional if available
+   if (allocated(config%method)) then
+      is = index(config%method, '/')
+      if (is == 0) is = len_trim(config%method) + 1
+      functional = lowercase(config%method(:is-1))
+      functional_id = get_functional_id(functional)
+   else
+      functional = "default"
+      functional_id = p_default
+   end if
+
+   ! Set charge-scaling function parameters
    ga = config%ga
    gc = config%gc
-   if (config%mbdscale) s9 = config%inp%s9
-   if (config%rational) then
-      if (config%has_param) then
-         param = config%inp
-      else
-         is = index(config%method, '/')
-         if (is == 0) is = len_trim(config%method) + 1
-         functional = lowercase(config%method(:is-1))
-         id = get_functional_id(functional)
-
-         ! special case: r2SCAN-3c (modifies s9, ga, gc)
-         if (id == p_r2scan_3c) then
-            if (.not.config%mbdscale) then
-               s9 = 2.0_wp
-            end if
-            if (.not.config%zeta) then
-               ga = 2.0_wp
-               gc = 1.0_wp
-            end if
-         end if
-
-         call get_rational_damping(functional, param, s9)
-         if (.not.allocated(param)) then
-            call fatal_error(error, "No parameters for '"//config%method//"' available")
-            return
-         end if
-      end if
+   if (functional_id == p_r2scan_3c .and. .not. config%zeta) then
+      ga = 2.0_wp
+      gc = 1.0_wp
    end if
 
-   if (allocated(param) .and. config%verbosity > 0) then
-      call ascii_damping_param(output_unit, param, config%method)
-   end if
-
-   if (allocated(param)) then
-      energy = 0.0_wp
-      if (config%grad) then
-         allocate(gradient(3, mol%nat), sigma(3, 3))
-      end if
-      if (config%hessian) then
-         allocate(hessian(3, mol%nat, 3, mol%nat))
-      end if
-   end if
-
+   ! Select a charge model
    if(allocated(config%charge_model)) then
       if(lowercase(config%charge_model) == "eeq") then
          charge_model = d4_qmod%eeq
@@ -182,9 +161,48 @@ subroutine run_main(config, error)
    ! Initialize D4/D4S model
    call new_dispersion_model(error, d4, mol, config%model, ga=ga, &
       & gc=gc, wf=config%wf, qmod=charge_model)
-
+   if (allocated(error)) return
+   call get_dispersion_model_id(error, d4, model_id)
    if (allocated(error)) return
 
+   ! Select the damping functions for two-body and optional three-body contributions
+   damping_2b = config%damping_2b
+   if (config%damping_2b < 0) then
+      damping_2b = d4%default_damping_2b
+   end if
+   damping_3b = config%damping_3b
+   if (config%damping_3b < 0 .and. config%atm) then
+      damping_3b = d4%default_damping_3b
+   end if
+
+   ! Select damping parameters
+   if (config%has_param .or. allocated(config%method)) then
+      ! Available parameters from the CLI take precendence
+      param = config%inp
+      ! Overwrite the remaining parameters from the internal storage
+      ! for a specific functional or defaults for a selected model/damping
+      call get_damping_params(error, functional, model_id, damping_2b, &
+         & damping_3b, param)
+      if (allocated(error)) return
+   end if
+
+   ! Setup the damping functions
+   call new_damping(error, damp, damping_2b, damping_3b)
+   if (allocated(error)) return
+
+   ! Check the damping parameters for consistency
+   if (allocated(param)) then
+      call damp%check_params(error, param)
+      if (allocated(error)) return
+   end if
+
+   ! Output the damping parameters
+   if (allocated(param) .and. config%verbosity > 0) then
+      call ascii_damping_param(output_unit, config%verbosity, d4, damp, param, &
+         & config%method, config%has_param)
+   end if
+
+   ! Output dispersion related properties
    if (config%properties) then
       if (config%verbosity > 1) then
          call ascii_atomic_radii(output_unit, mol, d4)
@@ -199,16 +217,24 @@ subroutine run_main(config, error)
       end if
    end if
 
-   if (allocated(param)) then
-      call get_dispersion(mol, d4, param, realspace_cutoff(), energy, gradient, &
-         & sigma)
-      if (config%pair_resolved) then
-         allocate(pair_disp2(mol%nat, mol%nat), pair_disp3(mol%nat, mol%nat))
-         call get_pairwise_dispersion(mol, d4, param, realspace_cutoff(), pair_disp2, &
-            & pair_disp3)
+   if (allocated(d4) .and. allocated(param)) then
+      energy = 0.0_wp
+      if (config%grad) then
+         allocate(gradient(3, mol%nat), sigma(3, 3))
       end if
       if (config%hessian) then
-         call get_dispersion_hessian(mol, d4, param, realspace_cutoff(), hessian)
+         allocate(hessian(3, mol%nat, 3, mol%nat))
+      end if
+      call get_dispersion(mol, d4, damp, param, realspace_cutoff(), energy, &
+         & gradient, sigma)
+      if (config%pair_resolved) then
+         allocate(pair_disp2(mol%nat, mol%nat), pair_disp3(mol%nat, mol%nat))
+         call get_pairwise_dispersion(mol, d4, damp, param, realspace_cutoff(), &
+            & pair_disp2, pair_disp3)
+      end if
+      if (config%hessian) then
+         call get_dispersion_hessian(mol, d4, damp, param, realspace_cutoff(), &
+            & hessian)
       end if
       if (config%verbosity > 0) then
          call ascii_results(output_unit, mol, energy, gradient, sigma)

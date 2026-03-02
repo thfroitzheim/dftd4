@@ -70,7 +70,7 @@ class Structure:
     ):
         """Create new molecular structure data"""
         if positions.size % 3 != 0:
-            raise ValueError("Expected tripels of cartesian coordinates")
+            raise ValueError("Expected triples of cartesian coordinates")
 
         if 3 * numbers.size != positions.size:
             raise ValueError("Dimension missmatch between numbers and positions")
@@ -144,34 +144,120 @@ class Structure:
             _cast("double*", _lattice),
         )
 
+class DampingFunction:
+    """
+    .. Damping function definition
+
+    Represents the mathematical form of the short-range damping of the two-body
+    and three-body dispersion interaction. The damping function is immutable
+    after contruction. To change the damping function, a new object must be created.
+
+    Raises
+    ------
+    ValueError
+        on invalid damping function or method name
+    RuntimeError
+        failed to construct damping function object in API
+    """
+
+    _damp = library.ffi.NULL
+
+    def __init__(self, **kwargs):
+        """
+        Create a new damping function from explicit names for the two- and 
+        three-body damping or from the default of a specified dispersion model.
+        Setting the three-body damping function to 'none' deactivates the ATM term.
+
+        Example
+        -------
+        >>> from dftd4.interface import DampingFunction
+        >>> # From explicit names for two- and three-body damping:
+        >>> damp = DampingFunction(damping_2b="rational", damping_3b="zero-avg")
+        >>> # From the defaults of a dispersion model:
+        >>> damp = DampingFunction(model="d4")
+        >>> # From the defaults of a dispersion model and deactivated three-body term:
+        >>> damp = DampingFunction(model="d4", damping_3b="none")
+
+        Two-body damping functions: 'rational', 'screened', 'zero', 'mzero',
+                                    'optpower', 'cso', 'koide'
+        Three-body damping functions: 'none', 'rational', 'screened', 'zero',
+                                      'zero-avg'
+        """
+
+        if "damping_2b" in kwargs and "model" in kwargs:
+            raise ValueError("Cannot provide both two-body damping and a model.")
+        
+        if "damping_2b" in kwargs:
+            # Explicitly specified two-body (and three-body) damping functions
+            _d2 = kwargs.get("damping_2b")
+            _d3 = kwargs.get("damping_3b", "none")
+        elif "model" in kwargs:
+            # Default damping functions for the specified model
+            # (optional modification of the three-body damping to deactivate the ATM term)
+            _model = kwargs.pop("model").lower().replace(" ", "")
+            if _model in ("d4", "d4s"):
+                _d2 = library.DEFAULT_TWOBODY_DAMPING[_model]
+                _d3 = kwargs.get("damping_3b", library.DEFAULT_THREEBODY_DAMPING[_model])
+            else:
+                raise ValueError(f"Unknown dispersion model '{_model}'.")
+        else:
+            raise ValueError("Either two-body damping or a model name is required.")
+
+        try:
+            self._damp = library.new_damping(_d2, _d3)
+        except KeyError as e:
+            raise ValueError(f"Invalid damping type: {e.args[0]}") from e
+
+
+    def check_params(self, param: 'DampingParam') -> None:
+          """
+          Check if the provided damping parameters are compatible with the damping
+          function. Will silently pass if the parameters are compatible,
+          or raise an error.
+          
+          Example
+          -------
+          >>> from dftd4.interface import DampingFunction, DampingParam
+          >>> damp = DampingFunction(damping_2b="rational", damping_3b="zero-avg")
+          >>> param = DampingParam(model="d4", s6=0.6400, s8=1.16888646, a1=0.44154604,
+                                   a2=4.73114642)
+          >>> damp.check_params(param)
+
+          Raises
+          ------
+          RuntimeError
+              incompatible or missing parameters required by the damping function
+          """
+          library.check_params(self._damp, param._param)
+
 
 class DampingParam:
     """
-    Rational damping function for DFT-D4.
+    .. Damping parameters for the damping function.
 
     The damping parameters contained in the object are immutable. To change the
     parametrization, a new object must be created. Furthermore, the object is
     opaque to the user and the contained data cannot be accessed directly.
 
-    There are two main ways provided to generate a new damping parameter object:
+    There are three ways provided to generate a new damping parameter object:
 
     1. a method name is passed to the constructor, the library will load the
        required data from the *dftd4* shared library.
 
-    2. all required parameters are passed to the constructor and the library will
-       generate an object from the given parameters.
+    2. a model name and all required parameters for the default damping function
+       of this dispersion model are passed. The library will generate 
+       a compatible object from the specified parameters.
 
-    .. note::
-
-       Mixing of the two methods is not allowed to avoid partial initialization
-       of any created objects. Users who need full control over the creation
-       of the object should use the second method.
+    3. all possible parameters are passed to the constructor without a model name
+       and the library will generate a general parameter object specifying
+       all parameters.
 
     Raises
     ------
     TypeError
-        incorrect input values provided to constructor
-
+        incorrect/missing input values provided to constructor
+    ValueError
+        invalid model, parameters, or damping types provided
     RuntimeError
         failed to construct damping parameter object in API
     """
@@ -179,69 +265,132 @@ class DampingParam:
     _param = library.ffi.NULL
 
     def __init__(self, **kwargs):
-        """Create new damping parameter from method name or explicit data"""
-
-        if "method" in kwargs and kwargs["method"] is None:
-            del kwargs["method"]
+        """Create new damping parameter object from method name or explicit data"""
 
         if not kwargs:
-            raise TypeError("Method name or complete damping parameter set required")
+            raise TypeError("Method name or explicit damping parameters are required.")
 
         if "method" in kwargs:
-            self._param = self.load_param(**kwargs)
+            _method = kwargs.pop("method")
+
+            if any (key in kwargs for key in ("s6", "s8", "s9",
+                                              "a1", "a2", "a3", "a4",
+                                              "rs6", "rs8", "rs9",
+                                              "alp", "bet")):
+                raise ValueError("Explicit parameters cannot be mixed with a method name.")
+
+            if "model" not in kwargs:
+                raise ValueError("Model name must be provided when using method name.")
+            _model = kwargs.get("model").lower().replace(" ", "")
+
+            
+            if "damping_2b" in kwargs:
+                # Explicitly specified two-body (and three-body) damping functions
+                _d2 = kwargs.get("damping_2b", library.DEFAULT_TWOBODY_DAMPING[_model])
+                _d3 = kwargs.get("damping_3b", "none")
+            elif _model in ("d4", "d4s"):
+                # Default damping functions for the specified model 
+                # (optionally modify three-body damping to deactivate the ATM term) 
+                _d2 = library.DEFAULT_TWOBODY_DAMPING[_model]
+                _d3 = kwargs.get("damping_3b", library.DEFAULT_THREEBODY_DAMPING[_model])
+            else:
+                raise ValueError(f"Unknown dispersion model '{_model}'.")
+
+            self._param = self.load_param(_method, _model, _d2, _d3)
+
+        elif "model" in kwargs:
+            _model = kwargs.pop("model").lower().replace(" ", "")
+            if _model in ("d4", "d4s"):
+                # Specify parameters for the default D4 damping (rational + zero-avg)
+                self._param = self.new_d4_default_param(**kwargs)
+            else:
+                raise ValueError(f"Unknown dispersion model '{_model}'.")
+
         else:
+            # Specify all possible parameters
             self._param = self.new_param(**kwargs)
 
     @staticmethod
-    def load_param(method, atm=True):
+    def load_param(method: str, model: str, damping_2b: str, damping_3b: str):
         """
-        Create damping function API object from internal library storage by searching
-        for the provided method name. The method name is case insensitive and hyphens
-        are ignored. In case the method name is unknown an exception is raised.
+        Create damping parameter API object from internal library storage for a given
+        model and damping function combination by searching for the provided method
+        name. The method name is case insensitive and hyphens are ignored. Setting
+        the three-body damping function to 'none' deactivates the ATM term. In case
+        the method name is unknown an exception is raised.
 
         Example
         -------
         >>> from dftd4.interface import DampingParam
-        >>> param = DampingParam(method="pbe", atm=True)
+        >>> # From the method name and defaults of the model:
+        >>> param = DampingParam(method="pbe", model="d4")
+        >>> # From the method name and defaults of the model without ATM:
+        >>> param = DampingParam(method="pbe", model="d4", damping_3b="none")
 
         Raises
         ------
         RuntimeError
             failed to construct damping parameter object in API
+        ValueError
+            invalid model or damping type provided
         """
-        _method = library.ffi.new("char[]", method.encode())
-        return library.load_rational_damping(_method, atm)
+
+        try:
+            return library.load_param(method, model, damping_2b, damping_3b)
+        except KeyError as e:
+            raise ValueError(f"Invalid model or damping type: {e.args[0]}") from e
 
     @staticmethod
-    def new_param(*, s6=1.0, s8, s9=1.0, a1, a2, alp=16.0):
+    def new_d4_default_param(*, s6=1.0, s8, s9=1.0, a1, a2, rs9=1.0, alp=16.0):
         """
-        Create damping function API object from user provided parameters.
-        This object represent a rational damping function and requires
-        at least the 's8', 'a1', and 'a2' parameters as input.
-        Additonally, the parameters 's6', 's9', and 'alp' can be overwritten.
+        Create D4 default damping parameter API object from user provided
+        parameters. This object contains damping parameters for a rational
+        two-body and averaged zero three-body damping function and requires
+        at least the 's8', 'a1', and 'a2' parameters as input. Additionally,
+        the parameters 's6', 's9', 'rs9', and 'alp' can be overwritten.
         The user provided damping parameters will be used unchecked.
 
         Example
         -------
         >>> from dftd4.interface import DampingParam
-        >>> param = DampingParam(s6=0.6400, s8=1.16888646, a1=0.44154604, a2=4.73114642)
+        >>> param = DampingParam(model="d4", s6=0.6400, s8=1.16888646, a1=0.44154604,
+                                 a2=4.73114642)
 
         Raises
         ------
         RuntimeError
             failed to construct damping parameter object in API
         """
-        return library.new_rational_damping(s6, s8, s9, a1, a2, alp)
+        return library.new_param(s6, s8, s9, a1, a2, 0.0, 0.0, 0.0, 0.0, rs9, alp, 0.0)
+    
+    @staticmethod
+    def new_param(*, s6=1.0, s8, s9=1.0, a1, a2, a3, a4, rs6, rs8, rs9, alp, bet):
+        """
+        Create damping parameter API object from full set of user provided
+        parameters. The user provided damping parameters will be used unchecked.
 
+        Example
+        -------
+        >>> from dftd4.interface import DampingParam
+        >>> param = DampingParam(s6=0.6400, s8=1.16888646, s9=1.0, a1=0.44154604,
+                                 a2=4.73114642, a3=0.0, a4=0.0, rs6=0.0, rs8=0.0,
+                                 rs9=1.0, alp=16.0, bet=0.0)
+
+        Raises
+        ------
+        RuntimeError
+            failed to construct damping parameter object in API
+        """
+        return library.new_param(s6, s8, s9, a1, a2, a3, a4, rs6, rs8, rs9, alp, bet)
 
 class DispersionModel(Structure):
     """
     .. Dispersion model
 
-    Representation of a dispersion model to evaluate C6 coefficients.
-    The model is coupled to the molecular structure it has been created
-    from and cannot be transfered to another molecular structure without
-    recreating it.
+    Representation of a dispersion model to evaluate the dispersion
+    coefficients and energies. The model is coupled to the molecular
+    structure it has been created from and cannot be transfered to
+    another molecular structure without recreating it.
 
     Example
     -------
@@ -284,7 +433,7 @@ class DispersionModel(Structure):
         Structure.__init__(self, numbers, positions, charge, lattice, periodic)
         
 
-        if model.lower().replace(" ", "") == "d4": 
+        if model.lower().replace(" ", "") == "d4":
             if "ga" in kwargs or "gc" in kwargs or "wf" in kwargs:
                 self._disp = library.custom_d4_model(
                     self._mol,
@@ -294,7 +443,7 @@ class DispersionModel(Structure):
                 )
             else:
                 self._disp = library.new_d4_model(self._mol)
-        elif model.lower().replace(" ", "") == "d4s": 
+        elif model.lower().replace(" ", "") == "d4s":
             if "ga" in kwargs or "gc" in kwargs:
                 self._disp = library.custom_d4s_model(
                     self._mol,
@@ -306,13 +455,13 @@ class DispersionModel(Structure):
         else: 
             raise ValueError(f"Unknown dispersion model '{model}'.")
 
-    def get_dispersion(self, param: DampingParam, grad: bool) -> dict:
+    def get_dispersion(self, damp: DampingFunction, param: DampingParam, grad: bool) -> dict:
         """
         Perform actual evaluation of the dispersion correction.
 
         Example
         -------
-        >>> from dftd4.interface import DampingParam, DispersionModel
+        >>> from dftd4.interface import DampingParam, DampingFunction, DispersionModel
         >>> import numpy as np
         >>> numbers = np.array([1, 1, 6, 5, 1, 15, 8, 17, 13, 15, 5, 1, 9, 15, 1, 15])
         >>> positions = np.array([  # Coordinates in Bohr
@@ -334,7 +483,9 @@ class DispersionModel(Structure):
         ...     [+2.85007173009739, -2.64884892757600, +0.71010806424206],
         ... ])
         >>> model = DispersionModel(numbers, positions)
-        >>> res = model.get_dispersion(DampingParam(method="scan"), grad=False)
+        >>> damp = DampingFunction(model="d4")
+        >>> param = DampingParam(method="scan", model="d4")
+        >>> res = model.get_dispersion(damp, param, grad=False)
         >>> res.get("energy")  # Results in atomic units
         -0.005328888532435093
 
@@ -355,6 +506,7 @@ class DispersionModel(Structure):
         library.get_dispersion(
             self._mol,
             self._disp,
+            damp._damp,
             param._param,
             _cast("double*", _energy),
             _cast("double*", _gradient),
@@ -424,7 +576,7 @@ class DispersionModel(Structure):
             "polarizabilities quad-quad": _alphaqq,
         }
 
-    def get_pairwise_dispersion(self, param: DampingParam) -> dict:
+    def get_pairwise_dispersion(self, damp: DampingFunction, param: DampingParam) -> dict:
         """
         Evaluate pairwise representation of the dispersion energy
 
@@ -443,7 +595,9 @@ class DispersionModel(Structure):
         ...         [+4.079203605652, -0.257751166821, +1.529856562614],
         ...     ]),
         ... )
-        >>> res = disp.get_pairwise_dispersion(DampingParam(method="tpss"))
+        >>> damp = DampingFunction(model="d4")
+        >>> param = DampingParam(method="tpss", model="d4")
+        >>> res = disp.get_pairwise_dispersion(damp, param)
         >>> res["additive pairwise energy"].sum()
         -0.0023605238432524104
         >>> res["non-additive pairwise energy"].sum()
@@ -456,6 +610,7 @@ class DispersionModel(Structure):
         library.get_pairwise_dispersion(
             self._mol,
             self._disp,
+            damp._damp,
             param._param,
             _cast("double*", _pair_disp2),
             _cast("double*", _pair_disp3),
@@ -464,6 +619,52 @@ class DispersionModel(Structure):
         return {
             "additive pairwise energy": _pair_disp2,
             "non-additive pairwise energy": _pair_disp3,
+        }
+
+    def get_numerical_hessian(self, damp: DampingFunction, param: DampingParam) -> np.ndarray:
+        """
+        Evaluate the numerical Hessian of the dispersion energy.
+
+        Example
+        -------
+        >>> from dftd4.interface import DampingParam, DampingFunction, DispersionModel
+        >>> import numpy as np
+        >>> disp = DispersionModel(
+        ...     numbers=np.array([7, 7, 1, 1, 1, 1, 1, 1]),
+        ...     positions=np.array([
+        ...         [-2.983345508575, -0.088082052767, +0.000000000000],
+        ...         [+2.983345508575, +0.088082052767, +0.000000000000],
+        ...         [-4.079203605652, +0.257751166821, +1.529856562614],
+        ...         [-1.605268001556, +1.243804812431, +0.000000000000],
+        ...         [-4.079203605652, +0.257751166821, -1.529856562614],
+        ...         [+4.079203605652, -0.257751166821, -1.529856562614],
+        ...         [+1.605268001556, -1.243804812431, +0.000000000000],
+        ...         [+4.079203605652, -0.257751166821, +1.529856562614],
+        ...     ]),
+        ... )
+        >>> damp = DampingFunction(model="d4")
+        >>> param = DampingParam(method="blyp", model="d4")
+        >>> res = disp.get_numerical_hessian(damp, param)
+        >>> res["hessian"].shape
+        (8, 3, 8, 3)
+        >>> res["hessian"][0, :, 0, :]
+        array([[-1.39880830e-04, -8.26672018e-05,  1.76708940e-15],
+               [-8.26672036e-05, -1.68686558e-04,  2.70024839e-16],
+               [ 1.08420217e-15,  1.66018458e-15, -9.37126387e-05]])
+        """
+
+        _hessian = np.zeros((len(self), 3, len(self), 3))
+
+        library.get_numerical_hessian(
+            self._mol,
+            self._disp,
+            damp._damp,
+            param._param,
+            _cast("double*", _hessian),
+        )
+
+        return {
+            "hessian": _hessian
         }
 
 

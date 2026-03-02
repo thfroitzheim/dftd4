@@ -32,9 +32,29 @@ module dftd4_help
       "-c,--charge <real>       Set charge to molecule, overwrites .CHRG file"//nl//&
       "-i,--input <format>      Hint for the format of the input file"//nl//&
       "-f,--func <method>       Use damping parameters for given functional"//nl//&
-      "   --param <list>        Specify parameters for rational damping,"//nl//&
-      "                         expected order is s6, s8, a1, a2 (requires four arguments)"//nl//&
-      "   --mbdscale <s9>       Use scaled ATM three-body dispersion"//nl//&
+      "-2b,--damp-2b <function> Use specific damping function for two-body dispersion"//nl//&
+      "                         (options: bj, screened, zero, mzero, op, cso, koide)"//nl//&
+      "-3b,--damp-3b <function> Use specific damping function for three-body dispersion"//nl//&
+      "                         (options: bj, screened, zero, zero-avg)"//nl//&
+      "   --s6 <real>           Set s6 scaling factor for two-body dip-dip (C6) dispersion"//nl//&
+      "   --s8 <real>           Set s8 scaling factor for two-body dip-quad (C8) dispersion"//nl//&
+      "   --s9 <real>           Set s9 scaling factor for three-body dip-dip-dip (C9 or ATM) dispersion"//nl//&
+      "   --a1 <real>           Set a1 linear radius scaling for damping function"//nl//&
+      "   --a2 <real>           Set a2 constant radius shift for damping function"//nl//&
+      "   --a3 <real>           Set a3 damping radius scaling in screening function (used in: screened)"//nl//&
+      "                         or short-range s6 modification (used in: cso)"//nl//&
+      "   --a4 <real>           Set a4 screening function exponent (used in: screened)"//nl//&
+      "                         or radius scaling for short-range s6 modification (used in: cso)"//nl//&
+      "   --rs6 <real>          Set rs6 distance-radius-fraction scaling for two-body dip-dip (C6) dispersion"//nl//&
+      "                         (used in: zero, mzero, koide)"//nl//&
+      "   --rs8 <real>          Set rs8 distance-radius-fraction scaling for two-body dip-quad (C8) dispersion"//nl//&
+      "                         (used in: zero, mzero, koide)"//nl//&
+      "   --rs9 <real>          Set rs9 distance-radius-fraction scaling for three-body dip-dip-dip (C9 or ATM) dispersion"//nl//&
+      "                         (used in: zero)"//nl//&
+      "   --alp <real>          Set alp exponent of distance-radius-fraction (used in: zero, mzero)"//nl//&
+      "   --bet <real>          Set bet optimized power exponent (used in: op)"//nl//&
+      "                         or additive linear radius scaling (used in: mzero)"//nl//&
+      "   --noatm               Deactivate ATM three-body dispersion"//nl//&
       "   --zeta <list>         Adjust charge scaling parameters, takes two reals,"//nl//&
       "                         expected order is ga, gc (default: 3.0, 2.0)"//nl//&
       "   --wfactor <real>      Adjust weighting factor for interpolation (only D4)"//nl//&

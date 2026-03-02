@@ -20,6 +20,7 @@ program tester
    use mctc_env, only : get_argument
    use mctc_env_testing, only : run_testsuite, new_testsuite, testsuite_type, &
       & select_suite, run_selected
+   use test_damping, only : collect_damping
    use test_dftd4, only : collect_dftd4
    use test_model, only : collect_model
    use test_pairwise, only : collect_pairwise
@@ -35,6 +36,7 @@ program tester
 
    testsuites = [ &
       & new_testsuite("model", collect_model), &
+      & new_testsuite("damping", collect_damping), &
       & new_testsuite("dftd4", collect_dftd4), &
       & new_testsuite("param", collect_param), &
       & new_testsuite("periodic", collect_periodic), &

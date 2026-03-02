@@ -14,6 +14,8 @@
 # You should have received a copy of the Lesser GNU General Public License
 # along with dftd4.  If not, see <https://www.gnu.org/licenses/>.
 
+subdir('reference')
+
 srcs += files(
   'd4.f90',
   'd4s.f90',

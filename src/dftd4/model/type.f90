@@ -16,16 +16,17 @@
 
 !> Definition of the abstract base dispersion model and generic implementations
 module dftd4_model_type
+   use dftd4_cache, only : dispersion_cache
+   use dftd4_damping_type, only : damping_type, damping_twobody, damping_threebody
+   use dftd4_integrator, only : integrator_type
+   use dftd4_param_type, only : param_type
    use mctc_env, only : wp, error_type
    use mctc_io, only : structure_type
    use multicharge, only : mchrg_model_type
-   use dftd4_cache, only : dispersion_cache
-   use dftd4_integrator, only : integrator_type
-   use dftd4_damping, only : damping_param
    implicit none
    private
 
-   public :: dispersion_model, d4_qmod
+   public :: dispersion_model, dftd_models, d4_qmod
 
 
    !> Abstract base dispersion model to evaluate C6 coefficients
@@ -85,6 +86,15 @@ module dftd4_model_type
       !> Integrator for polarizabilities
       class(integrator_type), allocatable :: integrator
 
+      !> Label identifying the dispersion model
+      character(len=:), allocatable :: label
+
+      !> Default two-body damping function
+      integer :: default_damping_2b
+
+      !> Default three-body damping function
+      integer :: default_damping_3b
+
    contains
 
       !> Update cache with dispersion coefficients and properties
@@ -133,7 +143,7 @@ module dftd4_model_type
          !> Dispersion model
          class(dispersion_model), intent(in) :: self
          !> Molecular structure data
-         class(structure_type), intent(in) :: mol
+         type(structure_type), intent(in) :: mol
          !> Dispersion cache
          type(dispersion_cache), intent(inout) :: cache
          !> Coordination numbers
@@ -310,6 +320,17 @@ module dftd4_model_type
 
    end interface
 
+   !> Possible DFT-D models
+   type :: enum_dftd_models
+      !> DFT-D4 model
+      integer :: d4 = 1
+      !> DFT-D4S model
+      integer :: d4s = 2
+   end type enum_dftd_models
+
+   !> Actual enumerator for possible DFT-D models
+   type(enum_dftd_models), parameter :: dftd_models = enum_dftd_models()
+   !DEC$ ATTRIBUTES DLLEXPORT :: dftd_models
 
    !> Possible reference charges for D4
    type :: enum_qmod
@@ -332,17 +353,19 @@ module dftd4_model_type
 contains
 
 !> Wrapper for the evaluation of two-body dispersion energy and derivatives
-subroutine get_dispersion2(self, mol, cache, param, trans, cutoff, energy, &
+subroutine get_dispersion2(self, mol, cache, damp, param, trans, cutoff, energy, &
    & dEdcn, dEdq, gradient, sigma)
-   !DEC$ ATTRIBUTES DLLEXPORT :: get_pairwise_dispersion2
+   !DEC$ ATTRIBUTES DLLEXPORT :: get_dispersion2
    !> Dispersion model
    class(dispersion_model), intent(in) :: self
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
    !> Dispersion cache
    type(dispersion_cache), intent(in) :: cache
+   !> Damping function
+   type(damping_type), intent(in) :: damp
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
    !> Lattice translations
    real(wp), intent(in) :: trans(:, :)
    !> Real space cutoff
@@ -360,29 +383,34 @@ subroutine get_dispersion2(self, mol, cache, param, trans, cutoff, energy, &
 
    logical :: grad
 
-   if (abs(param%s6) < epsilon(1.0_wp) .and. abs(param%s8) < epsilon(1.0_wp)) return
+   if (.not. allocated(damp%damping_2b) .or. .not. allocated(param%s6) .or. &
+      & .not. allocated(param%s8)) return
+   if ((abs(param%s6) < epsilon(1.0_wp) .and. abs(param%s8) < epsilon(1.0_wp))) return
    grad = present(gradient) .and. present(sigma) .and. present(dEdcn) .and. present(dEdq)
 
    if (grad) then
-      call get_dispersion2_derivs(self, mol, cache, param, trans, cutoff, &
-         & energy, dEdcn, dEdq, gradient, sigma)
+      call get_dispersion2_derivs(self, mol, cache, damp%damping_2b, param, &
+         & trans, cutoff, energy, dEdcn, dEdq, gradient, sigma)
    else
-      call get_dispersion2_energy(self, mol, cache, param, trans, cutoff, &
-         & energy)
+      call get_dispersion2_energy(self, mol, cache, damp%damping_2b, param, &
+         & trans, cutoff, energy)
    end if
 end subroutine get_dispersion2
 
 
 !> Evaluation of the two-body dispersion energy expression
-subroutine get_dispersion2_energy(self, mol, cache, param, trans, cutoff, energy)
+subroutine get_dispersion2_energy(self, mol, cache, damp, param, trans, cutoff, &
+   & energy)
    !> Dispersion model
    class(dispersion_model), intent(in) :: self
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
    !> Dispersion cache
    type(dispersion_cache), intent(in) :: cache
+   !> Two-body damping function
+   class(damping_twobody), intent(in) :: damp
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
    !> Lattice translations
    real(wp), intent(in) :: trans(:, :)
    !> Real space cutoff
@@ -400,7 +428,7 @@ subroutine get_dispersion2_energy(self, mol, cache, param, trans, cutoff, energy
    cutoff2 = cutoff*cutoff
    
    !$omp parallel default(none) &
-   !$omp shared(mol, self, cache, param, trans, cutoff2) &
+   !$omp shared(mol, self, cache, damp, param, trans, cutoff2) &
    !$omp private(iat, jat, jtr, izp, jzp, vec, r2, c6, c8, rdamp, d6, d8, dE) &
    !$omp shared(energy) &
    !$omp private(energy_local)
@@ -417,7 +445,7 @@ subroutine get_dispersion2_energy(self, mol, cache, param, trans, cutoff, energy
             r2 = vec(1)*vec(1) + vec(2)*vec(2) + vec(3)*vec(3)
             if (r2 > cutoff2 .or. r2 < epsilon(1.0_wp)) cycle
 
-            call param%get_2b_damp(r2, rdamp, d6, d8)
+            call damp%get_2b_damp(param, r2, rdamp, d6, d8)
 
             dE = -0.5_wp * (c6 * d6 + c8 * d8)
 
@@ -439,16 +467,18 @@ end subroutine get_dispersion2_energy
 
 
 !> Evaluation of the two-body dispersion energy and gradient expression
-subroutine get_dispersion2_derivs(self, mol, cache, param, trans, cutoff, &
+subroutine get_dispersion2_derivs(self, mol, cache, damp, param, trans, cutoff, &
    & energy, dEdcn, dEdq, gradient, sigma)
    !> Dispersion model
    class(dispersion_model), intent(in) :: self
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
    !> Dispersion cache
    type(dispersion_cache), intent(in) :: cache
+   !> Two-body damping function
+   class(damping_twobody), intent(in) :: damp
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
    !> Lattice translations
    real(wp), intent(in) :: trans(:, :)
    !> Real space cutoff
@@ -482,7 +512,7 @@ subroutine get_dispersion2_derivs(self, mol, cache, param, trans, cutoff, &
    cutoff2 = cutoff*cutoff
    
    !$omp parallel default(none) &
-   !$omp shared(mol, self, cache, param, trans, cutoff2) &
+   !$omp shared(mol, self, cache, damp, param, trans, cutoff2) &
    !$omp private(iat, jat, jtr, izp, jzp, vec, r2, c6, c8, rdamp, &
    !$omp& d6, d8, d6dr, d8dr, dc6dcni, dc6dqi, dc6dcnj, dc6dqj, &
    !$omp& dc8dcni, dc8dqi, dc8dcnj, dc8dqj, gdisp, dE, dG, dS) &
@@ -506,7 +536,7 @@ subroutine get_dispersion2_derivs(self, mol, cache, param, trans, cutoff, &
             r2 = vec(1)*vec(1) + vec(2)*vec(2) + vec(3)*vec(3)
             if (r2 > cutoff2 .or. r2 < epsilon(1.0_wp)) cycle
 
-            call param%get_2b_derivs(r2, rdamp, d6, d8, d6dr, d8dr)
+            call damp%get_2b_derivs(param, r2, rdamp, d6, d8, d6dr, d8dr)
             
             dE = -0.5_wp * (c6 * d6 + c8 * d8)
             
@@ -548,17 +578,19 @@ end subroutine get_dispersion2_derivs
 
 
 !> Wrapper to handle the evaluation of three-body dispersion energy and derivatives
-subroutine get_dispersion3(self, mol, cache, param, trans, cutoff, energy, &
+subroutine get_dispersion3(self, mol, cache, damp, param, trans, cutoff, energy, &
    & dEdcn, dEdq, gradient, sigma)
-   !DEC$ ATTRIBUTES DLLEXPORT :: get_pairwise_dispersion3
+   !DEC$ ATTRIBUTES DLLEXPORT :: get_dispersion3
    !> Dispersion model
    class(dispersion_model), intent(in) :: self
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
    !> Dispersion cache
    type(dispersion_cache), intent(in) :: cache
+   !> Damping function
+   type(damping_type), intent(in) :: damp
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
    !> Lattice translations
    real(wp), intent(in) :: trans(:, :)
    !> Real space cutoff
@@ -576,30 +608,32 @@ subroutine get_dispersion3(self, mol, cache, param, trans, cutoff, energy, &
 
    logical :: grad
 
+   if (.not. allocated(damp%damping_3b) .or. .not.allocated(param%s9)) return
    if (abs(param%s9) < epsilon(1.0_wp)) return
-   grad = present(gradient) .and. present(sigma) &
-      & .and. present(dEdcn) .and. present(dEdq)
+   grad = present(gradient) .and. present(sigma) .and. present(dEdcn) .and. present(dEdq)
 
    if (grad) then
-      call get_dispersion3_derivs(self, mol, cache, param, trans, cutoff, &
-         & energy, dEdcn, dEdq, gradient, sigma)
+      call get_dispersion3_derivs(self, mol, cache, damp%damping_3b, param, &
+         & trans, cutoff, energy, dEdcn, dEdq, gradient, sigma)
    else
-      call get_dispersion3_energy(self, mol, cache, param, trans, cutoff, &
-         & energy)
+      call get_dispersion3_energy(self, mol, cache, damp%damping_3b, param, &
+         & trans, cutoff, energy)
    end if
 end subroutine get_dispersion3
 
 
 !> Evaluation of the three-body dispersion energy
-subroutine get_dispersion3_energy(self, mol, cache, param, trans, cutoff, energy)
+subroutine get_dispersion3_energy(self, mol, cache, damp, param, trans, cutoff, energy)
    !> Dispersion model
    class(dispersion_model), intent(in) :: self
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
    !> Dispersion cache
    type(dispersion_cache), intent(in) :: cache
+   !> Three-body damping function
+   class(damping_threebody), intent(in) :: damp
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
    !> Lattice translations
    real(wp), intent(in) :: trans(:, :)
    !> Real space cutoff
@@ -619,7 +653,7 @@ subroutine get_dispersion3_energy(self, mol, cache, param, trans, cutoff, energy
    cutoff2 = cutoff*cutoff
    
    !$omp parallel default(none) &
-   !$omp shared(mol, self, cache, param, trans, cutoff2) &
+   !$omp shared(mol, self, cache, damp, param, trans, cutoff2) &
    !$omp private(iat, jat, kat, izp, jzp, kzp, jtr, ktr, vij, vjk, vik, &
    !$omp& r1, r2, r3, r5, r2ij, r2jk, r2ik, rdamp, rdampij, rdampik, rdampjk, &
    !$omp& d9, ang, triple, c9, dE) &
@@ -656,7 +690,7 @@ subroutine get_dispersion3_energy(self, mol, cache, param, trans, cutoff, energy
                   r3 = r2 * r1
                   r5 = r3 * r2
 
-                  call param%get_3b_damp(r1, r2ij, r2ik, r2jk, &
+                  call damp%get_3b_damp(param, r1, r2ij, r2ik, r2jk, &
                      & rdamp, rdampij, rdampik, rdampjk, d9)
 
                   ang = 0.375_wp*(r2ij + r2jk - r2ik)*(r2ij - r2jk + r2ik)&
@@ -682,17 +716,32 @@ end subroutine get_dispersion3_energy
 
 
 !> Evaluation of the three-body dispersion energy and gradient expression
-subroutine get_dispersion3_derivs(self, mol, cache, param, trans, cutoff, &
+subroutine get_dispersion3_derivs(self, mol, cache, damp, param, trans, cutoff, &
    & energy, dEdcn, dEdq, gradient, sigma)
+   !> Dispersion model
    class(dispersion_model), intent(in) :: self
-   class(structure_type), intent(in) :: mol
+   !> Molecular structure data
+   type(structure_type), intent(in) :: mol
+   !> Dispersion cache
    type(dispersion_cache), intent(in) :: cache
-   class(damping_param), intent(in) :: param
+   !> Three-body damping function
+   class(damping_threebody), intent(in) :: damp
+   !> Damping parameters
+   type(param_type), intent(in) :: param
+   !> Lattice translations
    real(wp), intent(in) :: trans(:, :)
+   !> Real space cutoff
    real(wp), intent(in) :: cutoff
+   !> Dispersion energy
    real(wp), intent(inout) :: energy(:)
-   real(wp), intent(inout) :: dEdcn(:), dEdq(:)
-   real(wp), intent(inout) :: gradient(:, :), sigma(:, :)
+   !> Derivative of the energy w.r.t. the coordination number
+   real(wp), intent(inout) :: dEdcn(:)
+   !> Derivative of the energy w.r.t. the partial charges
+   real(wp), intent(inout) :: dEdq(:)
+   !> Dispersion gradient
+   real(wp), intent(inout) :: gradient(:, :)
+   !> Dispersion virial
+   real(wp), intent(inout) :: sigma(:, :)
 
    integer :: iat, jat, kat, izp, jzp, kzp, jtr, ktr
    real(wp) :: vij(3), vjk(3), vik(3), r2ij, r2jk, r2ik, r1, r2, r3, r5
@@ -710,7 +759,7 @@ subroutine get_dispersion3_derivs(self, mol, cache, param, trans, cutoff, &
    cutoff2 = cutoff*cutoff
 
    !$omp parallel default(none) &
-   !$omp shared(mol, self, cache, param, trans, cutoff2) &
+   !$omp shared(mol, self, cache, damp, param, trans, cutoff2) &
    !$omp private(iat, jat, kat, izp, jzp, kzp, jtr, ktr, vij, vjk, vik, &
    !$omp& r1, r2, r3, r5, r2ij, r2jk, r2ik, rdamp, rdampij, rdampik, rdampjk, &
    !$omp& d9, d9drij, d9drik, d9drjk, ang, dang, triple, &
@@ -754,7 +803,7 @@ subroutine get_dispersion3_derivs(self, mol, cache, param, trans, cutoff, &
                   r3 = r2 * r1
                   r5 = r3 * r2
 
-                  call param%get_3b_derivs(r1, r2ij, r2ik, r2jk, rdamp, &
+                  call damp%get_3b_derivs(param, r1, r2ij, r2ik, r2jk, rdamp, &
                         & rdampij, rdampik, rdampjk, d9, d9drij, d9drik, d9drjk)
                   ang = 0.375_wp*(r2ij + r2jk - r2ik)*(r2ij - r2jk + r2ik)&
                      & *(-r2ij + r2jk + r2ik) / r5 + 1.0_wp / r3
@@ -764,21 +813,21 @@ subroutine get_dispersion3_derivs(self, mol, cache, param, trans, cutoff, &
                      & + r2ij * (3.0_wp * r2jk**2 + 2.0_wp * r2jk*r2ik &
                      & + 3.0_wp * r2ik**2)&
                      & - 5.0_wp * (r2jk - r2ik)**2 * (r2jk + r2ik)) / r5
-                  dGij(:) = c9 * (-dang * d9 / r2ij + ang * d9drij) * vij
+                  dGij(:) = c9 * (-dang * d9 / r2ij - ang * d9drij) * vij
 
                   ! d/drik
                   dang = -0.375_wp * (r2ik**3 + r2ik**2 * (r2jk + r2ij) &
                      & + r2ik * (3.0_wp * r2jk**2 + 2.0_wp * r2jk * r2ij &
                      & + 3.0_wp * r2ij**2) &
                      & - 5.0_wp * (r2jk - r2ij)**2 * (r2jk + r2ij)) / r5
-                  dGik(:) = c9 * (-dang * d9 / r2ik + ang * d9drik) * vik
+                  dGik(:) = c9 * (-dang * d9 / r2ik - ang * d9drik) * vik
 
                   ! d/drjk
                   dang = -0.375_wp * (r2jk**3 + r2jk**2*(r2ik + r2ij) &
                      & + r2jk * (3.0_wp * r2ik**2 + 2.0_wp * r2ik * r2ij &
                      & + 3.0_wp * r2ij**2) &
                      & - 5.0_wp * (r2ik - r2ij)**2 * (r2ik + r2ij)) / r5
-                  dGjk(:) = c9 * (-dang * d9 / r2jk + ang * d9drjk) * vjk
+                  dGjk(:) = c9 * (-dang * d9 / r2jk - ang * d9drjk) * vjk
 
                   dE = triple * d9 * ang / 3.0_wp
                   energy_local(iat) = energy_local(iat) - c9 * dE
@@ -826,16 +875,17 @@ end subroutine get_dispersion3_derivs
 
 
 !> Calculate pairwise two-body dispersion energy
-subroutine get_pairwise_dispersion2(self, mol, cache, param, trans, cutoff, energy)
-   !DEC$ ATTRIBUTES DLLEXPORT :: get_pairwise_dispersion2
+subroutine get_pairwise_dispersion2(self, mol, cache, damp, param, trans, cutoff, energy)
    !> Dispersion model
    class(dispersion_model), intent(in) :: self
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
    !> Dispersion cache
    type(dispersion_cache), intent(in) :: cache
+   !> Two-body damping function
+   class(damping_twobody), intent(in) :: damp
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
    !> Lattice translations
    real(wp), intent(in) :: trans(:, :)
    !> Real space cutoff
@@ -850,9 +900,12 @@ subroutine get_pairwise_dispersion2(self, mol, cache, param, trans, cutoff, ener
    ! Set to 0 explicitly as the shared variants are potentially non-zero (inout)
    real(wp), allocatable :: energy_local(:, :)
    
+   if (.not. allocated(param%s6) .or. .not. allocated(param%s8)) return
+   if ((abs(param%s6) < epsilon(1.0_wp) .and. abs(param%s8) < epsilon(1.0_wp))) return
+
    cutoff2 = cutoff*cutoff
    !$omp parallel default(none) &
-   !$omp shared(mol, self, cache, param, trans, cutoff2) &
+   !$omp shared(mol, self, cache, damp, param, trans, cutoff2) &
    !$omp private(iat, jat, jtr, izp, jzp, vec, r2, c6, c8, rdamp, d6, d8, dE) &
    !$omp shared(energy) &
    !$omp private(energy_local)
@@ -869,7 +922,7 @@ subroutine get_pairwise_dispersion2(self, mol, cache, param, trans, cutoff, ener
             r2 = vec(1)*vec(1) + vec(2)*vec(2) + vec(3)*vec(3)
             if (r2 > cutoff2 .or. r2 < epsilon(1.0_wp)) cycle
             
-            call param%get_2b_damp(r2, rdamp, d6, d8)
+            call damp%get_2b_damp(param, r2, rdamp, d6, d8)
 
             dE = -0.5_wp * (c6 * d6 + c8 * d8)
 
@@ -887,18 +940,20 @@ subroutine get_pairwise_dispersion2(self, mol, cache, param, trans, cutoff, ener
    deallocate(energy_local)
    !$omp end parallel
 
-end subroutine
+end subroutine get_pairwise_dispersion2
 
 !> Calculate pairwise three-body dispersion energy
-subroutine get_pairwise_dispersion3(self, mol, cache, param, trans, cutoff, energy)
+subroutine get_pairwise_dispersion3(self, mol, cache, damp, param, trans, cutoff, energy)
    !> Dispersion model
    class(dispersion_model), intent(in) :: self
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
    !> Dispersion cache
    type(dispersion_cache), intent(in) :: cache
+   !> Three-body damping function
+   class(damping_threebody), intent(in) :: damp
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
    !> Lattice translations
    real(wp), intent(in) :: trans(:, :)
    !> Real space cutoff
@@ -915,9 +970,12 @@ subroutine get_pairwise_dispersion3(self, mol, cache, param, trans, cutoff, ener
    ! Set to 0 explicitly as the shared variants are potentially non-zero (inout)
    real(wp), allocatable :: energy_local(:, :)
 
+   if (.not.allocated(param%s9)) return
+   if (abs(param%s9) < epsilon(1.0_wp)) return
+
    cutoff2 = cutoff*cutoff
    !$omp parallel default(none) &
-   !$omp shared(mol, self, cache, param, trans, cutoff2) &
+   !$omp shared(mol, self, cache, damp, param, trans, cutoff2) &
    !$omp private(iat, jat, kat, izp, jzp, kzp, jtr, ktr, vij, vjk, vik, &
    !$omp& r1, r2, r3, r5, r2ij, r2jk, r2ik, rdamp, rdampij, rdampik, rdampjk, &
    !$omp& d9, ang, triple, c9, dE) &
@@ -954,7 +1012,7 @@ subroutine get_pairwise_dispersion3(self, mol, cache, param, trans, cutoff, ener
                   r3 = r2 * r1
                   r5 = r3 * r2
 
-                  call param%get_3b_damp(r1, r2ij, r2ik, r2jk, &
+                  call damp%get_3b_damp(param, r1, r2ij, r2ik, r2jk, &
                      & rdamp, rdampij, rdampik, rdampjk, d9)
 
                   ang = 0.375_wp*(r2ij + r2jk - r2ik)*(r2ij - r2jk + r2ik)&
@@ -979,7 +1037,7 @@ subroutine get_pairwise_dispersion3(self, mol, cache, param, trans, cutoff, ener
    deallocate(energy_local)
    !$omp end parallel
 
-end subroutine
+end subroutine get_pairwise_dispersion3
 
 !> Logic exercise to distribute a triple energy to atomwise energies.
 elemental function triple_scale(ii, jj, kk) result(triple)

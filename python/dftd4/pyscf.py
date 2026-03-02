@@ -21,16 +21,16 @@ Compatibility layer for supporting DFT-D4 in `pyscf <https://pyscf.org/>`_.
 """
 
 try:
-    from pyscf import lib, gto
+    from pyscf import lib, gto, mcscf, scf
     from pyscf.grad import rhf as rhf_grad
 except ModuleNotFoundError:
     raise ModuleNotFoundError("This submodule requires pyscf installed")
 
-from typing import Tuple
+from typing import Tuple, Optional, Dict
 
 import numpy as np
 
-from .interface import DampingParam, DispersionModel
+from .interface import DampingFunction, DampingParam, DispersionModel
 
 GradientsBase = getattr(rhf_grad, "GradientsBase", rhf_grad.Gradients)
 
@@ -38,6 +38,64 @@ GradientsBase = getattr(rhf_grad, "GradientsBase", rhf_grad.Gradients)
 class DFTD4Dispersion(lib.StreamObject):
     """
     Implementation of the interface for using DFT-D4 in pyscf.
+    The `xc` functional can be provided in the constructor together with the
+    DFT-D `model` and optionally the two-body (`damping_2b`) and three-body
+    (`damping_3b`) damping functions to use.
+    Possible two-body damping functions are
+
+    ``"rational"``: (default for D4 and D4S)
+        For rational (Becke-Johnson) damping function
+    ``"screened"``:
+        For screened rational damping function
+    ``"zero"``
+        For zero (Chai-Head-Gordon) damping function
+    ``"mzero"``
+        Modified version of the zero damping function
+    ``"optpower"``
+        Optimized power damping function
+    ``"cso"``
+        CSO (C6-scaled only) damping function
+    ``"koide"``
+        Koide damping function
+
+    Possible three-body damping functions are
+
+    ``"rational"``: (default for D4 and D4S)
+        For rational (Becke-Johnson) damping function
+    ``"screened"``:
+        For screened rational damping function
+    ``"zero"``
+        For zero (Chai-Head-Gordon) damping function
+    ``"zero-avg"``
+        For averaged distance zero damping function
+
+    Custom parameters can be provided with the `param` dictionary.
+    The `param` dict contains the damping parameters, at least s8, a1 and a2
+    must be provided for the default (rational + zero-avg) damping of the d4
+    model. For all other damping functions all parameter must be specified
+    and optionally set zero if not used. The parameters are:
+
+    ======================== =========== ============================================
+    Tweakable parameter      Default     Description
+    ======================== =========== ============================================
+    s6                       1.0         Scaling of the dipole-dipole dispersion
+    s8                       None        Scaling of the dipole-quadrupole dispersion
+    s9                       1.0         Scaling of the three-body dispersion energy
+    a1                       None        Scaling of the critical radii
+    a2                       None        Offset of the critical radii
+    a3                       None        (Advanced) Additional damping parameter
+    a4                       None        (Advanced) Additional damping parameter
+    rs6                      None        (Advanced) Radii scaling
+    rs8                      None        (Advanced) Radii scaling
+    rs9                      None/1.0    (Advanced) Radii scaling for three-body
+    alp                      None/16.0   Exponent of the zero damping (ATM only)
+    bet                      None        (Advanced) Additional ATM parameter
+    ======================== =========== ============================================
+
+    Defaults are given for the general case where all parameters are required and for 
+    the default damping of the d4 model (second value).
+    The version of the damping can be changed after constructing the dispersion correction.
+    With the `atm` boolean the three-body dispersion energy can be disabled.    
 
     Examples
     --------
@@ -68,16 +126,28 @@ class DFTD4Dispersion(lib.StreamObject):
     >>> d4 = disp.DFTD4Dispersion(mol, xc="r2SCAN")
     >>> d4.kernel()[0]
     array(-0.0050011)
+    >>> d4.damping = {"3b":"none"}
+    >>> d4.kernel()[0]
+    array(-0.00499889)
+    >>> d4.atm = False
+    >>> d4.kernel()[0]
+    array(-0.00499638)
     """
 
-    def __init__(self, mol, xc: str = "hf", atm: bool = True, model: str = "d4"):
+    def __init__(self,
+                 mol: gto.Mole,
+                 xc: str = "hf",
+                 atm: bool = True,
+                 model: str = "d4",
+                 damping: Optional[Dict[str, str]] = None,
+                 param: Optional[Dict[str, float]] = None):
         self.mol = mol
         self.verbose = mol.verbose
         self.xc = xc
         self.atm = atm
         self.model = model
-        self.edisp = None
-        self.grads = None
+        self.damping = damping
+        self.param = param
 
     def dump_flags(self, verbose=None) -> "DFTD4Dispersion":
         """
@@ -85,6 +155,13 @@ class DFTD4Dispersion(lib.StreamObject):
         """
         lib.logger.info(self, "** DFTD4 parameter **")
         lib.logger.info(self, "func %s", self.xc)
+        lib.logger.info(self, "model %s", self.model)
+
+        damping = self.damping or {}
+        _d2 = damping.get("2b", "<default>")
+        _d3 = damping.get("3b", "<default>") if self.atm else "none"
+        lib.logger.info(self, "damping_2b %s", _d2)
+        lib.logger.info(self, "damping_3b %s", _d3 if self.atm else "none")
         return self
 
     def kernel(self) -> Tuple[float, np.ndarray]:
@@ -98,6 +175,30 @@ class DFTD4Dispersion(lib.StreamObject):
         -------
         float, ndarray
             The energy and gradient of the DFT-D4 dispersion correction.
+        
+        Examples
+        --------
+        >>> from pyscf import gto
+        >>> import dftd4.pyscf as disp
+        >>> mol = gto.M(
+        ...     atom='''
+        ...          Br    0.000000    0.000000    1.919978
+        ...          Br    0.000000    0.000000   -0.367147
+        ...          N     0.000000    0.000000   -3.235006
+        ...          C     0.000000    0.000000   -4.376626
+        ...          H     0.000000    0.000000   -5.444276
+        ...          '''
+        ... )
+        >>> d4 = disp.DFTD4Dispersion(mol, xc="PBE0", model="d4")
+        >>> energy, gradient = d4.kernel()
+        >>> energy
+        array(-0.00296818)
+        >>> gradient
+        array([[ 0.00000000e+00,  0.00000000e+00,  9.66197638e-05],
+               [ 0.00000000e+00,  0.00000000e+00,  2.36000434e-04],
+               [ 0.00000000e+00,  0.00000000e+00, -1.16718302e-04],
+               [ 0.00000000e+00,  0.00000000e+00, -1.84332770e-04],
+               [ 0.00000000e+00,  0.00000000e+00, -3.15691249e-05]])
         """
         mol = self.mol
 
@@ -116,18 +217,57 @@ class DFTD4Dispersion(lib.StreamObject):
             model=self.model,
         )
 
-        param = DampingParam(
-            method=self.xc,
-            atm=self.atm,
-        )
+        # Select if two- and three-body damping functions are specified
+        if self.damping is not None:
+            _d2 = self.damping.get("2b")
+            _d3 = self.damping.get("3b") if self.atm else "none"
+        else:
+            _d2 = None
+            _d3 = None if self.atm else "none"
 
-        res = disp.get_dispersion(param=param, grad=True)
+        if _d2 is not None:
+            # Explicitly specified damping functions
+            damp = DampingFunction(damping_2b=_d2, damping_3b=_d3)
+        else:
+            if _d3 is None:
+                # Default damping functions with unmodified ATM
+                damp = DampingFunction(model=self.model)
+            else:
+                # Default damping functions with modified ATM
+                damp = DampingFunction(model=self.model, damping_3b=_d3)
 
-        self.edisp = res.get("energy")
-        self.grads = res.get("gradient")
-        return self.edisp, self.grads
+        # Parameter selection
+        if self.param is not None:
+            if all (key in self.param for key in ("s6", "s8", "s9",
+                                                  "a1", "a2", "a3", "a4",
+                                                  "rs6", "rs8", "rs9",
+                                                  "alp", "bet")):
+                # Explicitly specify all possible parameters
+                param = DampingParam(**self.param)
+            else:
+                # Explicitly specified parameters for model default damping
+                param = DampingParam(model=self.model, **self.param)
+        elif _d2 is not None:
+            # Method specific parameters for the model with modified damping
+            param = DampingParam(method=self.xc, model=self.model,
+                                 damping_2b=_d2, damping_3b=_d3)
+        else:
+            if _d3 is None:
+                # Method and model specific parameters with default damping
+                # and unmodified ATM
+                param = DampingParam(method=self.xc, model=self.model)
+            else:
+                # Method and model specific parameters with default damping
+                # and modified ATM
+                param = DampingParam(method=self.xc, model=self.model,
+                                     damping_3b=_d3)
+        
+        # Actual dispersion calculation
+        res = disp.get_dispersion(damp=damp, param=param, grad=True)
 
-    def reset(self, mol) -> "DFTD4Dispersion":
+        return res.get("energy"), res.get("gradient")
+
+    def reset(self, mol: gto.Mole) -> "DFTD4Dispersion":
         """
         Reset mol and clean up relevant attributes for scanner mode
         """
@@ -151,17 +291,19 @@ class _DFTD4Grad:
     pass
 
 
-def energy(mf, model: str = "d4"):
+def energy(mf: scf.hf.SCF, **kwargs) -> scf.hf.SCF:
     """
     Apply DFT-D4 corrections to SCF or MCSCF methods by returning an
     instance of a new class built from the original instances class.
+    The dispersion correction is stored in the `with_dftd4` attribute of
+    the class.
 
     Parameters
     ----------
-    mf
+    mf: scf.hf.SCF
         The method to which DFT-D4 corrections will be applied.
-    model 
-        The DFT-D4 model to use (D4S or D4 (default)).
+    **kwargs
+        Keyword arguments passed to the `DFTD4Dispersion` class.
 
     Returns
     -------
@@ -189,18 +331,15 @@ def energy(mf, model: str = "d4"):
     -110.917424528592
     """
 
-    from pyscf.mcscf import casci
-    from pyscf.scf import hf
-
-    if not isinstance(mf, (hf.SCF, casci.CASCI)):
+    if not isinstance(mf, (scf.hf.SCF, mcscf.casci.CASCI)):
         raise TypeError("mf must be an instance of SCF or CASCI")
 
     with_dftd4 = DFTD4Dispersion(
         mf.mol,
         xc="hf"
-        if isinstance(mf, casci.CASCI)
+        if isinstance(mf, mcscf.casci.CASCI)
         else getattr(mf, "xc", "HF").upper().replace(" ", ""),
-        model=model,
+        **kwargs,
     )
 
     if isinstance(mf, _DFTD4):
@@ -244,15 +383,19 @@ def energy(mf, model: str = "d4"):
     return DFTD4(mf, with_dftd4)
 
 
-def grad(mfgrad: GradientsBase):
+def grad(mfgrad: GradientsBase, **kwargs):
     """
     Apply DFT-D4 corrections to SCF or MCSCF nuclear gradients methods
     by returning an instance of a new class built from the original class.
+    The dispersion correction is stored in the `with_dftd4` attribute of
+    the class.
 
     Parameters
     ----------
     mfgrad
         The method to which DFT-D4 corrections will be applied.
+    **kwargs
+        Keyword arguments passed to the `DFTD4Dispersion` class.
 
     Returns
     -------
@@ -291,7 +434,7 @@ def grad(mfgrad: GradientsBase):
 
     # Ensure that the zeroth order results include DFTD4 corrections
     if not getattr(mfgrad.base, "with_dftd4", None):
-        mfgrad.base = dftd4(mfgrad.base)
+        mfgrad.base = energy(mfgrad.base, **kwargs)
 
     class DFTD4Grad(_DFTD4Grad, mfgrad.__class__):
         """

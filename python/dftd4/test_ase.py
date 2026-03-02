@@ -111,6 +111,24 @@ def test_ase_pbed4s() -> None:
         3.5280658564314775,
     ]
 
+def test_ase_pbed4s_custom_damping() -> None:
+    thr = 1.0e-12
+    atoms = molecule("bicyclobutane")
+
+    atoms.calc = DFTD4(method="PBE", model="d4s", damping_hint={"2b": "rational", "3b": "zero-avg"})
+
+    print(atoms.get_potential_energy())
+
+    assert approx(atoms.get_potential_energy(), abs=thr) == -0.16377494406788423
+
+
+def test_ase_pbed4_noatm() -> None:
+    thr = 1.0e-12
+    atoms = molecule("bicyclobutane")
+
+    atoms.calc = DFTD4(method="PBE", model="d4", damping_hint={"3b": "none"})
+    assert approx(atoms.get_potential_energy(), abs=thr) == -0.15427642282371362
+
 
 def test_ase_tpssd4() -> None:
     thr = 1.0e-6

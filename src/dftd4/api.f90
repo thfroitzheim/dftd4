@@ -24,14 +24,13 @@ module dftd4_api
    use mctc_env, only : wp, error_type, fatal_error
    use mctc_io_structure, only : structure_type, new
    use dftd4_cutoff, only : realspace_cutoff
-   use dftd4_damping, only : damping_param
-   use dftd4_damping_rational, only : rational_damping_param
+   use dftd4_damping, only : damping_type, new_damping
    use dftd4_disp, only : get_dispersion, get_pairwise_dispersion, get_properties
-   use dftd4_model, only : dispersion_model
+   use dftd4_model, only : dispersion_model, get_dispersion_model_id
    use dftd4_model_d4, only : d4_model, new_d4_model
    use dftd4_model_d4s, only : d4s_model, new_d4s_model
    use dftd4_numdiff, only: get_dispersion_hessian
-   use dftd4_param, only : get_rational_damping
+   use dftd4_param, only : param_type, get_damping_params
    use dftd4_utils, only : wrap_to_central_cell
    use dftd4_version, only : get_dftd4_version
    implicit none
@@ -49,8 +48,12 @@ module dftd4_api
    public :: new_d4_model_api, custom_d4_model_api, delete_model_api
    public :: new_d4s_model_api, custom_d4s_model_api
 
+   public :: vp_damping
+   public :: new_damping_api, new_default_damping_api, check_params_api
+   public :: delete_damping_api
+
    public :: vp_param
-   public :: new_rational_damping_api , load_rational_damping_api
+   public :: new_param_api, load_param_api, load_default_param_api
    public :: delete_param_api
 
    public :: get_dispersion_api, get_pairwise_dispersion_api, get_properties_api
@@ -76,12 +79,46 @@ module dftd4_api
       class(dispersion_model), allocatable :: ptr
    end type vp_model
 
+   !> Available dispersion models
+   enum, bind(c)
+      enumerator :: &
+         dftd4_model_d4 = 1_c_int, &
+         dftd4_model_d4s = 2_c_int
+   end enum
+
+   !> Void pointer to damping function
+   type :: vp_damping
+      !> Actual payload
+      type(damping_type), allocatable :: ptr
+   end type vp_damping
+
+   !> Available two-body damping functions
+   enum, bind(c)
+      enumerator :: &
+         dftd4_damping_twobody_rational = 1_c_int, &
+         dftd4_damping_twobody_screened = 2_c_int, &
+         dftd4_damping_twobody_zero = 3_c_int, &
+         dftd4_damping_twobody_mzero = 4_c_int, &
+         dftd4_damping_twobody_optpower = 5_c_int, &
+         dftd4_damping_twobody_cso = 6_c_int, &
+         dftd4_damping_twobody_koide = 7_c_int
+   end enum
+
+   !> Available three-body damping functions
+   enum, bind(c)
+      enumerator :: &
+         dftd4_damping_threebody_none = -1_c_int, &
+         dftd4_damping_threebody_rational = 1_c_int, &
+         dftd4_damping_threebody_screened = 2_c_int, &
+         dftd4_damping_threebody_zero = 3_c_int, &
+         dftd4_damping_threebody_zero_avg = 4_c_int
+   end enum
+
    !> Void pointer to damping parameters
    type :: vp_param
       !> Actual payload
-      class(damping_param), allocatable :: ptr
+      type(param_type), allocatable :: ptr
    end type vp_param
-
 
    logical, parameter :: debug = .false.
 
@@ -486,56 +523,197 @@ subroutine delete_model_api(vdisp) &
 end subroutine delete_model_api
 
 
-!> Create new rational damping parameters
-function new_rational_damping_api(verror, s6, s8, s9, a1, a2, alp) &
-      & result(vparam) &
-      & bind(C, name=namespace//"new_rational_damping")
-   !DEC$ ATTRIBUTES DLLEXPORT :: new_rational_damping_api
+!> Create a new damping function with specified two-body and three-body damping
+function new_damping_api(verror, damping_2b_id, damping_3b_id) &
+      & result(vdamp) &
+      & bind(C, name=namespace//"new_damping")
+   !DEC$ ATTRIBUTES DLLEXPORT :: new_damping_api
    type(c_ptr), value :: verror
    type(vp_error), pointer :: error
-   real(c_double), value, intent(in) :: s6
-   real(c_double), value, intent(in) :: s8
-   real(c_double), value, intent(in) :: s9
-   real(c_double), value, intent(in) :: a1
-   real(c_double), value, intent(in) :: a2
-   real(c_double), value, intent(in) :: alp
-   type(c_ptr) :: vparam
-   type(rational_damping_param), allocatable :: tmp
-   type(vp_param), pointer :: param
+   integer(c_int), value, intent(in) :: damping_2b_id
+   integer(c_int), value, intent(in) :: damping_3b_id
+   type(c_ptr) :: vdamp
+   type(vp_damping), pointer :: damp
 
-   if (debug) print'("[Info]",1x, a)', "new_rational_damping"
+   type(damping_type), allocatable :: tmp
 
-   vparam = c_null_ptr
+   vdamp = c_null_ptr
+
+   if (debug) print'("[Info]",1x, a)', "new_damping"
 
    if (.not.c_associated(verror)) return
    call c_f_pointer(verror, error)
 
    allocate(tmp)
-   tmp = rational_damping_param(s6=s6, s8=s8, s9=s9, a1=a1, a2=a2, alp=alp)
+   call new_damping(error%ptr, tmp, damping_2b_id, damping_3b_id)
+   if (allocated(error%ptr) .and. allocated(tmp)) then
+      deallocate(tmp)
+      return
+   end if
+   if (.not.allocated(tmp)) then
+      call fatal_error(error%ptr, "Unable to setup damping function")
+      return
+   end if
+
+   allocate(damp)
+   call move_alloc(tmp, damp%ptr)
+   vdamp = c_loc(damp)
+
+end function new_damping_api
+
+
+!> Create a new default damping function for a dispersion model
+function new_default_damping_api(verror, vdisp) &
+      & result(vdamp) &
+      & bind(C, name=namespace//"new_default_damping")
+   !DEC$ ATTRIBUTES DLLEXPORT :: new_default_damping_api
+   type(c_ptr), value :: verror
+   type(vp_error), pointer :: error
+   type(c_ptr), value :: vdisp
+   type(vp_model), pointer :: disp
+   type(c_ptr) :: vdamp
+   type(vp_damping), pointer :: damp
+
+   type(damping_type), allocatable :: tmp
+
+   vdamp = c_null_ptr
+
+   if (debug) print'("[Info]",1x, a)', "new_default_damping"
+
+   if (.not.c_associated(verror)) return
+   call c_f_pointer(verror, error)
+
+   if (.not.c_associated(vdisp)) then
+      call fatal_error(error%ptr, "Dispersion model is missing")
+      return
+   end if
+   call c_f_pointer(vdisp, disp)
+
+   allocate(tmp)
+   call new_damping(error%ptr, tmp, disp%ptr%default_damping_2b, &
+      & disp%ptr%default_damping_3b)
+   if (allocated(error%ptr)) then
+      deallocate(tmp)
+      return
+   end if
+
+   allocate(damp)
+   call move_alloc(tmp, damp%ptr)
+   vdamp = c_loc(damp)
+
+end function new_default_damping_api
+
+
+!> Check the availability of the damping parameters for the use damping function
+subroutine check_params_api(verror, vdamp, vparam) &
+      & bind(C, name=namespace//"check_params")
+   !DEC$ ATTRIBUTES DLLEXPORT :: check_params_api
+   type(c_ptr), value :: verror
+   type(vp_error), pointer :: error
+   type(c_ptr), value :: vdamp
+   type(vp_damping), pointer :: damp
+   type(c_ptr), value :: vparam
+   type(vp_param), pointer :: param
+
+   if (debug) print'("[Info]",1x, a)', "check_params"
+
+   if (.not.c_associated(verror)) return
+   call c_f_pointer(verror, error)
+
+   if (.not.c_associated(vdamp)) then
+      call fatal_error(error%ptr, "Damping function is missing")
+      return
+   end if
+   call c_f_pointer(vdamp, damp)
+
+   if (.not.c_associated(vparam)) then
+      call fatal_error(error%ptr, "Damping parameters are missing")
+      return
+   end if
+   call c_f_pointer(vparam, param)
+
+   call damp%ptr%check_params(error%ptr, param%ptr)
+
+end subroutine check_params_api
+
+
+!> Delete damping functions
+subroutine delete_damping_api(vdamp) &
+      & bind(C, name=namespace//"delete_damping")
+   !DEC$ ATTRIBUTES DLLEXPORT :: delete_damping_api
+   type(c_ptr), intent(inout) :: vdamp
+   type(vp_damping), pointer :: damp
+
+   if (debug) print'("[Info]",1x, a)', "delete_damping"
+
+   if (c_associated(vdamp)) then
+      call c_f_pointer(vdamp, damp)
+
+      deallocate(damp)
+      vdamp = c_null_ptr
+   end if
+
+end subroutine delete_damping_api
+
+
+!> Create new damping parameters
+function new_param_api(s6, s8, s9, a1, a2, a3, a4, rs6, rs8, rs9, alp, bet) &
+      & result(vparam) &
+      & bind(C, name=namespace//"new_param")
+   !DEC$ ATTRIBUTES DLLEXPORT :: new_param_api
+   real(c_double), value, intent(in) :: s6
+   real(c_double), value, intent(in) :: s8
+   real(c_double), value, intent(in) :: s9
+   real(c_double), value, intent(in) :: a1
+   real(c_double), value, intent(in) :: a2
+   real(c_double), value, intent(in) :: a3
+   real(c_double), value, intent(in) :: a4
+   real(c_double), value, intent(in) :: rs6
+   real(c_double), value, intent(in) :: rs8
+   real(c_double), value, intent(in) :: rs9
+   real(c_double), value, intent(in) :: alp
+   real(c_double), value, intent(in) :: bet
+   type(c_ptr) :: vparam
+   type(param_type), allocatable :: tmp
+   type(vp_param), pointer :: param
+
+   if (debug) print'("[Info]",1x, a)', "new_param"
+
+   vparam = c_null_ptr
+
+   allocate(tmp)
+   tmp = param_type(s6=s6, s8=s8, s9=s9, a1=a1, a2=a2, a3=a3, a4=a4, &
+      & rs6=rs6, rs8=rs8, rs9=rs9, alp=alp, bet=bet)
+
+   if (abs(s9) < epsilon(s9)) then
+      deallocate(tmp%s9)
+   end if
 
    allocate(param)
    call move_alloc(tmp, param%ptr)
    vparam = c_loc(param)
 
-end function new_rational_damping_api
+end function new_param_api
 
 
-!> Load rational damping parameters from internal storage
-function load_rational_damping_api(verror, charptr, atm) &
+!> Load damping parameters from internal storage
+function load_param_api(verror, charptr, model_id, damping_2b_id, damping_3b_id) &
       & result(vparam) &
-      & bind(C, name=namespace//"load_rational_damping")
-   !DEC$ ATTRIBUTES DLLEXPORT :: load_rational_damping_api
+      & bind(C, name=namespace//"load_param")
+   !DEC$ ATTRIBUTES DLLEXPORT :: load_param_api
    type(c_ptr), value :: verror
    type(vp_error), pointer :: error
    character(kind=c_char), intent(in) :: charptr(*)
-   logical(c_bool), value, intent(in) :: atm
-   character(len=:, kind=c_char), allocatable :: method
+   integer(c_int), value, intent(in) :: model_id
+   integer(c_int), value, intent(in) :: damping_2b_id
+   integer(c_int), value, intent(in) :: damping_3b_id
    type(c_ptr) :: vparam
    type(vp_param), pointer :: param
-   real(wp), allocatable :: s9
-   class(damping_param), allocatable :: tmp
 
-   if (debug) print'("[Info]",1x, a)', "load_rational_damping"
+   character(len=:, kind=c_char), allocatable :: method
+   type(param_type), allocatable :: tmp
+
+   if (debug) print'("[Info]",1x, a)', "load_param"
 
    vparam = c_null_ptr
 
@@ -544,15 +722,11 @@ function load_rational_damping_api(verror, charptr, atm) &
 
    call c_f_character(charptr, method)
 
-   if (atm) then
-      s9 = 1.0_wp
-   else
-      s9 = 0.0_wp
-   end if
-
-   call get_rational_damping(method, tmp, s9)
-   if (.not.allocated(tmp)) then
-      call fatal_error(error%ptr, "Functional '"//method//"' not known")
+   allocate(tmp)
+   call get_damping_params(error%ptr, method, model_id, damping_2b_id, &
+      & damping_3b_id, tmp)
+   if (allocated(error%ptr)) then
+      deallocate(tmp)
       return
    end if
 
@@ -560,7 +734,59 @@ function load_rational_damping_api(verror, charptr, atm) &
    call move_alloc(tmp, param%ptr)
    vparam = c_loc(param)
 
-end function load_rational_damping_api
+end function load_param_api
+
+
+!> Load default damping parameters for the dispersion model from internal storage
+function load_default_param_api(verror, charptr, vdisp) &
+      & result(vparam) &
+      & bind(C, name=namespace//"load_default_param")
+   !DEC$ ATTRIBUTES DLLEXPORT :: load_default_param_api
+   type(c_ptr), value :: verror
+   type(vp_error), pointer :: error
+   character(kind=c_char), intent(in) :: charptr(*)
+   type(c_ptr), value :: vdisp
+   type(vp_model), pointer :: disp
+   type(c_ptr) :: vparam
+   type(vp_param), pointer :: param
+
+   character(len=:, kind=c_char), allocatable :: method
+   type(param_type), allocatable :: tmp
+   integer :: model_id
+
+   if (debug) print'("[Info]",1x, a)', "load_default_param"
+
+   vparam = c_null_ptr
+
+   if (.not.c_associated(verror)) return
+   call c_f_pointer(verror, error)
+
+   call c_f_character(charptr, method)
+
+   if (.not.c_associated(vdisp)) then
+      call fatal_error(error%ptr, "Dispersion model is missing")
+      return
+   end if
+   call c_f_pointer(vdisp, disp)
+
+   call get_dispersion_model_id(error%ptr, disp%ptr, model_id)
+   if (allocated(error%ptr)) then
+      return
+   end if
+
+   allocate(tmp)
+   call get_damping_params(error%ptr, method, model_id, disp%ptr%default_damping_2b, &
+      & disp%ptr%default_damping_3b, tmp)
+   if (allocated(error%ptr)) then
+      deallocate(tmp)
+      return
+   end if
+
+   allocate(param)
+   call move_alloc(tmp, param%ptr)
+   vparam = c_loc(param)
+
+end function load_default_param_api
 
 
 !> Delete damping parameters
@@ -574,7 +800,8 @@ subroutine delete_param_api(vparam) &
 
    if (c_associated(vparam)) then
       call c_f_pointer(vparam, param)
-
+      ! Deallocate all internal pointers
+      call param%ptr%reset()
       deallocate(param)
       vparam = c_null_ptr
    end if
@@ -583,7 +810,7 @@ end subroutine delete_param_api
 
 
 !> Calculate dispersion
-subroutine get_dispersion_api(verror, vmol, vdisp, vparam, &
+subroutine get_dispersion_api(verror, vmol, vdisp, vdamp, vparam, &
       & energy, c_gradient, c_sigma) &
       & bind(C, name=namespace//"get_dispersion")
    !DEC$ ATTRIBUTES DLLEXPORT :: get_dispersion_api
@@ -593,6 +820,8 @@ subroutine get_dispersion_api(verror, vmol, vdisp, vparam, &
    type(vp_structure), pointer :: mol
    type(c_ptr), value :: vdisp
    type(vp_model), pointer :: disp
+   type(c_ptr), value :: vdamp
+   type(vp_damping), pointer :: damp
    type(c_ptr), value :: vparam
    type(vp_param), pointer :: param
    real(c_double), intent(out) :: energy
@@ -620,6 +849,17 @@ subroutine get_dispersion_api(verror, vmol, vdisp, vparam, &
    end if
    call c_f_pointer(vdisp, disp)
 
+   if (.not.c_associated(vdamp)) then
+      call fatal_error(error%ptr, "Damping function is missing")
+      return
+   end if
+   call c_f_pointer(vdamp, damp)
+
+   if (.not.allocated(damp%ptr)) then
+      call fatal_error(error%ptr, "Damping function is not initialized")
+      return
+   end if
+
    if (.not.c_associated(vparam)) then
       call fatal_error(error%ptr, "Damping parameters are missing")
       return
@@ -636,20 +876,20 @@ subroutine get_dispersion_api(verror, vmol, vdisp, vparam, &
       gradient = c_gradient(:3, :mol%ptr%nat)
    endif
 
-   has_sigma = present(c_sigma) 
+   has_sigma = present(c_sigma)
    if (has_sigma) then
       sigma = c_sigma(:3, :3)
    ! Still needs to be passed into dispersion subroutines,
    ! just won't be returned through the API. 
-   ! Would need to refactor disperision
+   ! Would need to refactor dispersion
    ! subroutines to make sigma truly optional. 
    else if (has_grad) then
-      allocate(sigma(3,3)) 
+      allocate(sigma(3,3))
    endif
 
    ! Evaluate energy, gradient (optional), and 
    ! sigma (optional) analytically
-   call get_dispersion(mol%ptr, disp%ptr, param%ptr, realspace_cutoff(), &
+   call get_dispersion(mol%ptr, disp%ptr, damp%ptr, param%ptr, realspace_cutoff(), &
       & energy, gradient, sigma)
 
    if (has_grad) then
@@ -663,8 +903,8 @@ subroutine get_dispersion_api(verror, vmol, vdisp, vparam, &
 end subroutine get_dispersion_api
 
 !> Calculate hessian numerically
-subroutine get_numerical_hessian_api(verror, vmol, vdisp, & 
-                                   & vparam, c_hessian) &
+subroutine get_numerical_hessian_api(verror, vmol, vdisp, vdamp, vparam, & 
+      & c_hessian) &
       & bind(C, name=namespace//"get_numerical_hessian")
    !DEC$ ATTRIBUTES DLLEXPORT :: get_numerical_hessian_api
    type(c_ptr), value :: verror
@@ -673,6 +913,8 @@ subroutine get_numerical_hessian_api(verror, vmol, vdisp, &
    type(vp_structure), pointer :: mol
    type(c_ptr), value :: vdisp
    type(vp_model), pointer :: disp
+   type(c_ptr), value :: vdamp
+   type(vp_damping), pointer :: damp
    type(c_ptr), value :: vparam
    type(vp_param), pointer :: param
    real(c_double), intent(out) :: c_hessian(*)
@@ -698,6 +940,17 @@ subroutine get_numerical_hessian_api(verror, vmol, vdisp, &
    end if
    call c_f_pointer(vdisp, disp)
 
+   if (.not.c_associated(vdamp)) then
+      call fatal_error(error%ptr, "Damping function is missing")
+      return
+   end if
+   call c_f_pointer(vdamp, damp)
+
+   if (.not.allocated(damp%ptr)) then
+      call fatal_error(error%ptr, "Damping function is not initialized")
+      return
+   end if
+
    if (.not.c_associated(vparam)) then
       call fatal_error(error%ptr, "Damping parameters are missing")
       return
@@ -712,14 +965,14 @@ subroutine get_numerical_hessian_api(verror, vmol, vdisp, &
    ! Evaluate hessian numerically 
    hessian = reshape(c_hessian(:9*nat_sq), &
                     &(/3, mol%ptr%nat, 3, mol%ptr%nat/))
-   call get_dispersion_hessian(mol%ptr, disp%ptr, param%ptr, &
-    & realspace_cutoff(), hessian)
+   call get_dispersion_hessian(mol%ptr, disp%ptr, damp%ptr, param%ptr, &
+      & realspace_cutoff(), hessian)
    c_hessian(:9*nat_sq) = reshape(hessian, (/9*nat_sq/))
 
 end subroutine get_numerical_hessian_api
 
 !> Calculate pairwise representation of dispersion energy
-subroutine get_pairwise_dispersion_api(verror, vmol, vdisp, vparam, &
+subroutine get_pairwise_dispersion_api(verror, vmol, vdisp, vdamp, vparam, &
       & c_pair_energy2, c_pair_energy3) &
       & bind(C, name=namespace//"get_pairwise_dispersion")
    !DEC$ ATTRIBUTES DLLEXPORT :: get_pairwise_dispersion_api
@@ -729,6 +982,8 @@ subroutine get_pairwise_dispersion_api(verror, vmol, vdisp, vparam, &
    type(vp_structure), pointer :: mol
    type(c_ptr), value :: vdisp
    type(vp_model), pointer :: disp
+   type(c_ptr), value :: vdamp
+   type(vp_damping), pointer :: damp
    type(c_ptr), value :: vparam
    type(vp_param), pointer :: param
    type(c_ptr), value, intent(in) :: c_pair_energy2
@@ -753,6 +1008,17 @@ subroutine get_pairwise_dispersion_api(verror, vmol, vdisp, vparam, &
    end if
    call c_f_pointer(vdisp, disp)
 
+   if (.not.c_associated(vdamp)) then
+      call fatal_error(error%ptr, "Damping function is missing")
+      return
+   end if
+   call c_f_pointer(vdamp, damp)
+
+   if (.not.allocated(damp%ptr)) then
+      call fatal_error(error%ptr, "Damping function is not initialized")
+      return
+   end if
+
    if (.not.c_associated(vparam)) then
       call fatal_error(error%ptr, "Damping parameters are missing")
       return
@@ -767,8 +1033,8 @@ subroutine get_pairwise_dispersion_api(verror, vmol, vdisp, vparam, &
    call c_f_pointer(c_pair_energy2, pair_energy2, [mol%ptr%nat, mol%ptr%nat])
    call c_f_pointer(c_pair_energy3, pair_energy3, [mol%ptr%nat, mol%ptr%nat])
 
-   call get_pairwise_dispersion(mol%ptr, disp%ptr, param%ptr, realspace_cutoff(), &
-      & pair_energy2, pair_energy3)
+   call get_pairwise_dispersion(mol%ptr, disp%ptr, damp%ptr, param%ptr, &
+      & realspace_cutoff(), pair_energy2, pair_energy3)
 
 end subroutine get_pairwise_dispersion_api
 

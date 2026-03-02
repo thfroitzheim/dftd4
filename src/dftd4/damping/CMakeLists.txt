@@ -18,7 +18,14 @@ set(dir "${CMAKE_CURRENT_SOURCE_DIR}")
 
 list(
   APPEND srcs
+  "${dir}/cso.f90"
+  "${dir}/koide.f90"
+  "${dir}/mzero.f90"
+  "${dir}/optpower.f90"
   "${dir}/rational.f90"
+  "${dir}/screened.f90"
+  "${dir}/type.f90"
+  "${dir}/zero.f90"
 )
 
 set(srcs "${srcs}" PARENT_SCOPE)

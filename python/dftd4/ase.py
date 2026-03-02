@@ -39,12 +39,19 @@ Supported keywords are
 ======================== ============ ============================================
  method                   None         Method to calculate dispersion for
  params_tweaks            None         Optional dict with the damping parameters
+ damping_hint             None         Optional dict with the damping functions
  cache_api                True         Reuse generate API objects (recommended)
  model                    d4           Used dispersion Model (D4S or D4 (default))
 ======================== ============ ============================================
 
-The params_tweaks dict contains the damping parameters, at least s8, a1 and a2
-must be provided
+The optional damping_hint dict contains the two-body ("2b") and three-body ("3b") 
+damping function types. If not provided the default damping functions of the model
+will be used. If the three-body damping function is set to "none" the ATM contribution
+will be disabled.
+
+The optional params_tweaks dict contains the damping parameters (either all
+damping parameters or parameters for the model specific default (e.g., rational 
++ zero-avg for d4 requiring at least s8, a1 and a2). The parameters are:
 
 ======================== =========== ============================================
  Tweakable parameter      Default     Description
@@ -54,14 +61,18 @@ must be provided
  s9                       1.0         Scaling of the three-body dispersion energy
  a1                       None        Scaling of the critical radii
  a2                       None        Offset of the critical radii
- alp                      16.0        Exponent of the zero damping (ATM only)
+ a3                       None        (Advanced) Additional damping parameter
+ a4                       None        (Advanced) Additional damping parameter
+ rs6                      None        (Advanced) Radii scaling
+ rs8                      None        (Advanced) Radii scaling
+ rs9                      None/1.0    (Advanced) Radii scaling for three-body
+ alp                      None/16.0   Exponent of the zero damping (ATM only)
+ bet                      None        (Advanced) Additional ATM parameter
 ======================== =========== ============================================
 
-Either method or s8, a1 and a2 must be provided, s9 can be used to overwrite
-the ATM scaling if the method is provided in the model.
-Disabling the three-body dispersion (s9=0.0) changes the internal selection rules
-for damping parameters of a given method and prefers special two-body only
-damping parameters if available!
+Disabling the three-body dispersion (s9=0.0 or "3b": "none") changes the internal 
+selection rules for damping parameters of a given method and prefers special two-body 
+only damping parameters if available!
 
 Example
 -------
@@ -98,7 +109,7 @@ from ase.calculators.calculator import (
 from ase.calculators.mixing import SumCalculator
 from ase.units import Bohr, Hartree
 
-from .interface import DampingParam, DispersionModel
+from .interface import DampingFunction, DampingParam, DispersionModel
 
 
 class DFTD4(Calculator):
@@ -113,7 +124,7 @@ class DFTD4(Calculator):
     >>> from ase.calculators.nwchem import NWChem
     >>> from dftd4.ase import DFTD4
     >>> atoms = molecule('H2O')
-    >>> atoms.calc = SumCalculator([DFTD4(method="PBE"), NWChem(xc="PBE")])
+    >>> atoms.calc = SumCalculator([DFTD4(method="PBE", model="d4"), NWChem(xc="PBE")])
     """
 
     implemented_properties = [
@@ -124,7 +135,8 @@ class DFTD4(Calculator):
 
     default_parameters = {
         "method": None,
-        "params_tweaks": {},
+        "params_tweaks": None,
+        "damping_hint": None,
         "cache_api": True,
         "model" : "d4"
     }
@@ -151,7 +163,7 @@ class DFTD4(Calculator):
         >>> from ase.calculators.emt import EMT
         >>> from dftd4.ase import DFTD4
         >>> atoms = molecule("C60")
-        >>> atoms.calc = DFTD4(method="pbe").add_calculator(EMT())
+        >>> atoms.calc = DFTD4(method="pbe", model="d4").add_calculator(EMT())
         >>> atoms.get_potential_energy()
         6.348142387048062
         >>> [calc.get_potential_energy() for calc in atoms.calc.calcs]
@@ -220,24 +232,81 @@ class DFTD4(Calculator):
                 model=self.parameters.get("model"),
             )
 
-        except RuntimeError:
-            raise InputError("Cannot construct dispersion model for dftd4")
+        except (RuntimeError, ValueError) as e:
+            raise InputError("Cannot construct dispersion model for dftd4") from e
 
         return disp
 
-    def _create_damping_param(self) -> DampingParam:
-        """Create a new API damping parameter object"""
+    def _create_damping_function(self) -> DampingFunction:
+        """Create a new DampingFunction object."""
+
+        _model = (self.parameters.get("model") or "d4").lower().replace(" ", "")
+
+        _damping = self.parameters.get("damping_hint", None) or {}
+        _d2 = _damping.get("2b")
+        _d3 = _damping.get("3b")
 
         try:
-            dpar = DampingParam(
-                method=self.parameters.get("method"),
-                **self.parameters.get("params_tweaks", {}),
-            )
+            # Damping function
+            if _d2 is not None:
+                if _d3 is None:
+                   # Explicitly specified damping function without ATM
+                   return DampingFunction(damping_2b=_d2)
+                else:
+                   # Explicitly specified damping function with ATM
+                   return DampingFunction(damping_2b=_d2, damping_3b=_d3)
+            else: 
+                if _d3 is None: 
+                   # Use default damping function with unmodified ATM
+                   return DampingFunction(model=_model)
+                else:
+                   # Use default damping function with modified ATM
+                   return DampingFunction(model=_model, damping_3b=_d3)
 
-        except RuntimeError:
-            raise InputError("Cannot construct damping parameter for dftd4")
+        except (RuntimeError, ValueError, TypeError) as e:
+            raise InputError("Cannot construct damping function for dftd4") from e
 
-        return dpar
+    def _create_damping_param(self) -> DampingParam:
+        """Create a new DampingParam object."""
+
+        _model = (self.parameters.get("model") or "d4").lower().replace(" ", "")
+
+        _method = self.parameters.get("method", None)
+        if _method is not None and str(_method).strip() == "":
+            _method = None
+
+        _tweaks = self.parameters.get("params_tweaks", None)
+        _has_tweaks = bool(_tweaks)
+        _tweaks = _tweaks if _has_tweaks else {}
+
+        _damping = self.parameters.get("damping_hint", None) or {}
+        _d2 = _damping.get("2b")
+        _d3 = _damping.get("3b")
+
+        try:
+            if _has_tweaks:
+                if all(key in _tweaks for key in ("s6", "s8", "s9",
+                                                  "a1", "a2", "a3", "a4",
+                                                  "rs6", "rs8", "rs9",
+                                                  "alp", "bet")):
+                    # Explicitly specify all possible parameters
+                    return DampingParam(**_tweaks)
+                else:
+                    # Explicitly specified parameters for model default damping
+                    return DampingParam(model=_model, **_tweaks)
+            else:
+                if _method is None:
+                   raise TypeError("Method name or complete damping parameter set required")
+                # Default parameters for a given method and model
+                param_kwargs = {"method": _method, "model": _model}
+                if _d2 is not None:
+                   param_kwargs["damping_2b"] = _d2
+                if _d3 is not None:
+                   param_kwargs["damping_3b"] = _d3
+                return DampingParam(**param_kwargs)
+
+        except (RuntimeError, ValueError, TypeError) as e:
+            raise InputError("Cannot construct damping parameter for dftd4") from e
 
     def calculate(
         self,
@@ -256,10 +325,11 @@ class DFTD4(Calculator):
         if self._disp is None:
             self._disp = self._create_api_calculator()
 
+        _damp = self._create_damping_function()
         _dpar = self._create_damping_param()
 
         try:
-            _res = self._disp.get_dispersion(param=_dpar, grad=True)
+            _res = self._disp.get_dispersion(damp=_damp, param=_dpar, grad=True)
         except RuntimeError:
             raise CalculationFailed("dftd4 could not evaluate input")
 

@@ -20,7 +20,7 @@ module test_param
       & test_failed
    use mctc_io, only : structure_type
    use mstore, only : get_structure
-   use dftd4_param
+   use dftd4_param, only : get_damping_params, get_functional_id, p_default
    use dftd4
    implicit none
    private
@@ -42,14 +42,15 @@ subroutine collect_param(testsuite)
    type(unittest_type), allocatable, intent(out) :: testsuite(:)
 
    testsuite = [ &
-      & new_unittest("rational-damping", test_rational_damping), &
-      & new_unittest("libxc-names", test_libxc_names) &
+      & new_unittest("d4-damping", test_d4_damping), &
+      & new_unittest("libxc-names", test_libxc_names), &
+      & new_unittest("default", test_default) &
       & ]
 
 end subroutine collect_param
 
 
-subroutine test_dftd4_gen(error, mol, param, ref)
+subroutine test_dftd4_gen(error, mol, d4, damp, param, ref)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -57,27 +58,31 @@ subroutine test_dftd4_gen(error, mol, param, ref)
    !> Molecular structure data
    type(structure_type), intent(in) :: mol
 
+   !> Dispersion model
+   class(dispersion_model), intent(in) :: d4
+
+   !> Damping function
+   type(damping_type), intent(in) :: damp
+
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
 
    !> Expected dispersion energy
    real(wp), intent(in) :: ref
 
-   type(d4_model) :: d4
    real(wp) :: energy
 
-   call new_d4_model(error, d4, mol)
-   call get_dispersion(mol, d4, param, cutoff, energy)
+   call get_dispersion(mol, d4, damp, param, cutoff, energy)
 
    call check(error, energy, ref, thr=thr)
    if (allocated(error)) then
-      print'(es21.14)',energy
+      print'(3es22.14)',energy, ref, energy-ref
    end if
 
 end subroutine test_dftd4_gen
 
 
-subroutine test_rational_damping(error)
+subroutine test_d4_damping(error)
 
    !> Error handling
    type(error_type), allocatable, intent(out) :: error
@@ -136,7 +141,7 @@ subroutine test_rational_damping(error)
       &-3.62056559678757E-2_wp,-2.40058302367699E-2_wp,-6.96544052724497E-2_wp, &
       &-7.14846527169669E-2_wp,-6.94907081073225E-2_wp,-6.20062456876537E-2_wp, &
       &-5.03611950945288E-2_wp,-2.92623318488036E-2_wp,-3.16651212523792E-2_wp, &
-      &-3.45136899744303E-2_wp,-3.21006297575776E-2_wp,-2.64304324016606E-2_wp, &
+      &-3.45136899744303E-2_wp,-3.17795690622616E-2_wp,-2.64304324016606E-2_wp, &
       &-9.62084434444786E-2_wp,-8.46614067739745E-2_wp,-1.02981045785624E-1_wp, &
       &-1.30367427484416E-1_wp,-9.72681691945497E-2_wp,-4.56420158979754E-2_wp, &
       &-3.03460981931314E-2_wp,-2.95785080956723E-2_wp,-2.74474515700095E-2_wp, &  
@@ -144,20 +149,26 @@ subroutine test_rational_damping(error)
       &-2.44710136053936E-2_wp,-2.74280989349169E-2_wp,-2.92749846421858E-1_wp, &
       &-4.75432573533092E-2_wp,-8.87276590259854E-2_wp,-8.87276590259854E-2_wp, &
       &-5.90626128920443E-2_wp,-1.49262251668830E-1_wp]
-   class(damping_param), allocatable :: param
+   type(damping_type) :: damp
+   type(param_type) :: param
+   type(d4_model) :: d4
    type(structure_type) :: mol
    integer :: ii
 
    call get_structure(mol, "UPU23", "0a")
+   call new_d4_model(error, d4, mol)
    do ii = 1, size(func)
-      call get_rational_damping(trim(func(ii)), param, s9=1.0_wp)
-      call check(error, allocated(param))
+      call param%reset()
+      call get_damping_params(error, trim(func(ii)), dftd_models%d4, &
+         & d4%default_damping_2b, d4%default_damping_3b, param)
+      if (allocated(error)) return
+      call new_damping(error, damp, d4%default_damping_2b, d4%default_damping_3b)
       if (allocated(error)) exit
-      call test_dftd4_gen(error, mol, param, ref(ii))
+      call test_dftd4_gen(error, mol, d4, damp, param, ref(ii))
       if (allocated(error)) exit
    end do
 
-end subroutine test_rational_damping
+end subroutine test_d4_damping
 
 
 subroutine test_libxc_names(error)
@@ -219,6 +230,41 @@ subroutine test_libxc_names(error)
    end do
 
 end subroutine test_libxc_names
+
+
+subroutine test_default(error)
+
+   !> Error handling
+   type(error_type), allocatable, intent(out) :: error
+
+   type(structure_type) :: mol
+   type(param_type) :: param
+   type(d4_model) :: d4
+   integer :: id
+
+   character(len=*), parameter :: default(*) = [character(len=32) :: 'default']
+
+   call get_structure(mol, "UPU23", "0a")
+   call new_d4_model(error, d4, mol)
+
+   id = get_functional_id(default(1))
+   call check(error, id, p_default)
+   call get_damping_params(error, id, dftd_models%d4, &
+         & d4%default_damping_2b, d4%default_damping_3b, param)
+   if (allocated(error)) return
+   
+   call check(error, param%s6, 1.0_wp)
+   if (allocated(error)) return
+   call check(error, param%s9, 1.0_wp)
+   if (allocated(error)) return
+   call check(error, param%alp, 16.0_wp)
+   if (allocated(error)) return
+
+   if (allocated(param%s8)) then
+      call test_failed(error, "s8 has no default value")
+   end if
+
+end subroutine test_default
 
 
 end module test_param

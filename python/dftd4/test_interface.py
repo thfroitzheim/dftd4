@@ -15,27 +15,148 @@
 # along with dftd4.  If not, see <https://www.gnu.org/licenses/>.
 
 import numpy as np
-from dftd4.interface import DampingParam, DispersionModel, Structure
+from dftd4.interface import DampingFunction, DampingParam, DispersionModel, Structure
 from pytest import approx, raises
 
 
-def test_rational_damping_noargs() -> None:
+def test_param_noargs() -> None:
     """Check constructor of damping parameters for insufficient arguments"""
 
     with raises(TypeError):
         DampingParam()
 
+
+    with raises(ValueError, match="Model name must be provided"):
+        DampingParam(method="blyp")
+
+    with raises(ValueError, match="Explicit parameters cannot be mixed"):
+        DampingParam(method="blyp", model="d4", s8=1.0, a1=0.4, a2=5.0)
+
+    with raises(ValueError, match="Unknown dispersion model"):
+        DampingParam(method="blyp", model="D42")
+
+    with raises(ValueError, match="Invalid model or damping type"):
+        DampingParam(method="blyp", model="d4", damping_2b="none", damping_3b="none")
+
+    with raises(RuntimeError, match="No D4 damping parameters available"):
+        DampingParam(method="abc", model="d4")
+
+    DampingParam(method="blyp", model="d4")
+    DampingParam(method="blyp", model="d4", damping_2b="rational", damping_3b="zero-avg")
+    DampingParam(method="blyp", model="d4", damping_2b="rational", damping_3b="none")
+
+
     with raises(TypeError, match="s8"):
-        DampingParam(a1=0.4, a2=5.0)
+        DampingParam(model="d4", a1=0.4, a2=5.0)
 
     with raises(TypeError, match="a1"):
-        DampingParam(s8=1.0, a2=5.0)
+        DampingParam(model="d4", s8=1.0, a2=5.0)
 
     with raises(TypeError, match="a2"):
-        DampingParam(s8=1.0, a1=0.4)
+        DampingParam(model="d4", s8=1.0, a1=0.4)
 
-    with raises(TypeError):
-        DampingParam(s8=1.0, a1=0.4, a2=5.0, method="abc")
+    with raises(ValueError, match="Unknown dispersion model"):
+        DampingParam(model="D42", s8=1.0, a1=0.4, a2=5.0)
+
+    with raises(TypeError, match="a3|unexpected keyword"):
+        DampingParam(model="d4s", s8=1.0, a1=0.4, a2=5.0, a3=0.0)
+
+    DampingParam(model="d4", s8=1.0, a1=0.4, a2=5.0)
+    DampingParam(model="d4s", s6=0.9, s8=1.0, s9=1.1, a1=0.4, a2=5.0,
+                 rs9=1.0, alp=16.0)
+
+
+    with raises(TypeError, match="a1"):
+        DampingParam(s8=1.0, a2=5.0, a3=0.0, a4=0.0, rs6=0.0, rs8=0.0,
+                     rs9=1.0, alp=16.0, bet=0.0)
+
+    with raises(TypeError, match="a2"):
+        DampingParam(s8=1.0, a1=0.4, a3=0.0, a4=0.0, rs6=0.0, rs8=0.0,
+                     rs9=1.0, alp=16.0, bet=0.0)
+
+    with raises(TypeError, match="a3"):
+        DampingParam(s8=1.0, a1=0.4, a2=5.0, a4=0.0, rs6=0.0, rs8=0.0,
+                     rs9=1.0, alp=16.0, bet=0.0)
+
+    with raises(TypeError, match="a4"):
+        DampingParam(s8=1.0, a1=0.4, a2=5.0, a3=0.0, rs6=0.0, rs8=0.0,
+                     rs9=1.0, alp=16.0, bet=0.0)
+
+    with raises(TypeError, match="rs6"):
+        DampingParam(s8=1.0, a1=0.4, a2=5.0, a3=0.0, a4=0.0, rs8=0.0,
+                     rs9=1.0, alp=16.0, bet=0.0)
+
+    with raises(TypeError, match="rs8"):
+        DampingParam(s8=1.0, a1=0.4, a2=5.0, a3=0.0, a4=0.0, rs6=0.0,
+                     rs9=1.0, alp=16.0, bet=0.0)
+
+    with raises(TypeError, match="rs9"):
+        DampingParam(s8=1.0, a1=0.4, a2=5.0, a3=0.0, a4=0.0, rs6=0.0,
+                     rs8=1.0, alp=16.0, bet=0.0)
+
+    with raises(TypeError, match="alp"):
+        DampingParam(s8=1.0, a1=0.4, a2=5.0, a3=0.0, a4=0.0, rs6=0.0,
+                     rs8=1.0, rs9=1.0, bet=0.0)
+
+    with raises(TypeError, match="bet"):
+        DampingParam(s8=1.0, a1=0.4, a2=5.0, a3=0.0, a4=0.0, rs6=0.0,
+                     rs8=0.0, rs9=1.0, alp=16.0)
+
+    DampingParam(
+        s6=1.0, s8=1.0, s9=1.0,
+        a1=0.4, a2=5.0, a3=0.0, a4=0.0,
+        rs6=0.0, rs8=0.0, rs9=1.0,
+        alp=16.0, bet=0.0
+    )
+
+
+def test_damping_noargs() -> None:
+    """Check constructor of damping function for insufficient/invalid arguments."""
+
+    with raises(ValueError, match="Either two-body damping"):
+        DampingFunction()
+
+    with raises(ValueError, match="Cannot provide both"):
+        DampingFunction(model="d4", damping_2b="rational")
+
+    with raises(ValueError, match="Cannot provide both"):
+        DampingFunction(model="d4", damping_2b="rational", damping_3b="zero-avg")
+
+    with raises(ValueError, match="Either two-body damping"):
+        DampingFunction(damping_3b="zero-avg")
+
+    with raises(ValueError, match="Invalid damping type:"):
+        DampingFunction(damping_2b="none")
+
+    with raises(ValueError, match="Invalid damping type:"):
+        DampingFunction(damping_2b="rational", damping_3b="abc")
+
+    DampingFunction(damping_2b="rational") 
+    DampingFunction(damping_2b="rational", damping_3b="zero-avg")
+    DampingFunction(damping_2b="screened", damping_3b="none")
+
+    with raises(ValueError, match="Unknown dispersion model"):
+        DampingFunction(model="D42")
+
+    DampingFunction(model="d4")
+    DampingFunction(model=" D4S ")
+    DampingFunction(model="d4", damping_3b="none")
+
+
+def test_damping_check_params() -> None:
+    """Check compatibility of damping function and parameters."""
+
+    damp = DampingFunction(model="d4")
+    param = DampingParam(method="blyp", model="d4")
+    damp.check_params(param)
+
+    param = DampingParam(
+        s6=1.0, s8=1.0, s9=1.0,
+        a1=0.4, a2=5.0, a3=0.0, a4=0.0,
+        rs6=0.0, rs8=0.0, rs9=1.0,
+        alp=16.0, bet=0.0
+    )
+    damp.check_params(param)
 
 
 def test_structure() -> None:
@@ -82,7 +203,7 @@ def test_structure() -> None:
         Structure(np.array([1, 1, 1]), positions)
 
     # Also check for sane coordinate input
-    with raises(ValueError, match="Expected tripels"):
+    with raises(ValueError, match="Expected triples"):
         Structure(numbers, np.random.rand(7))
 
     # Construct real molecule
@@ -148,11 +269,15 @@ def test_blypd4() -> None:
 
     model = DispersionModel(numbers, positions)
 
-    res = model.get_dispersion(DampingParam(method="blyp"), grad=False)
+    res = model.get_dispersion(DampingFunction(model="d4"),
+                               DampingParam(method="blyp", model="d4"),
+                               grad=False)
 
     assert approx(res.get("energy"), abs=thr) == -0.06991716314879085
 
-    res = model.get_dispersion(DampingParam(method="blyp"), grad=True)
+    res = model.get_dispersion(DampingFunction(model="d4"),
+                               DampingParam(method="blyp", model="d4"),
+                               grad=True)
 
     assert approx(res.get("energy"), abs=thr) == -0.06991716314879085
 
@@ -204,11 +329,15 @@ def test_tpssd4s() -> None:
 
     model = DispersionModel(numbers, positions, model="d4s")
 
-    res = model.get_dispersion(DampingParam(method="tpss"), grad=False)
+    res = model.get_dispersion(DampingFunction(model="d4s"),
+                               DampingParam(method="tpss", model="d4s"),
+                               grad=False)
 
     assert approx(res.get("energy"), abs=thr) == -0.046233140236052253
 
-    res = model.get_dispersion(DampingParam(method="tpss"), grad=True)
+    res = model.get_dispersion(DampingFunction(model="d4s"),
+                               DampingParam(method="tpss", model="d4s"),
+                               grad=True)
 
     assert approx(res.get("energy"), abs=thr) == -0.046233140236052253
 
@@ -260,11 +389,15 @@ def test_pbed4() -> None:
 
     model = DispersionModel(numbers, positions)
 
-    res = model.get_dispersion(DampingParam(method="pbe"), grad=False)
+    res = model.get_dispersion(DampingFunction(model="d4"),
+                               DampingParam(method="pbe", model="d4"),
+                               grad=False)
 
     assert approx(res.get("energy"), abs=thr) == -0.028415184156428127
 
-    res = model.get_dispersion(DampingParam(method="pbe"), grad=True)
+    res = model.get_dispersion(DampingFunction(model="d4"),
+                               DampingParam(method="pbe", model="d4"),
+                               grad=True)
 
     assert approx(res.get("energy"), abs=thr) == -0.028415184156428127
 
@@ -316,14 +449,14 @@ def test_r2scan3c() -> None:
 
     model = DispersionModel(numbers, positions, ga=2.0, gc=1.0)
 
-    res = model.get_dispersion(
-        DampingParam(s8=0.0, a1=0.42, a2=5.65, s9=2.0), grad=False
+    res = model.get_dispersion(DampingFunction(model="d4"),
+        DampingParam(model="d4", s8=0.0, a1=0.42, a2=5.65, s9=2.0), grad=False
     )
 
     assert approx(res.get("energy"), abs=thr) == -0.008016697276824889
 
-    res = model.get_dispersion(
-        DampingParam(s8=0.0, a1=0.42, a2=5.65, s9=2.0), grad=True
+    res = model.get_dispersion(DampingFunction(model="d4"),
+        DampingParam(model="d4", s8=0.0, a1=0.42, a2=5.65, s9=2.0), grad=True
     )
 
     assert approx(res.get("energy"), abs=thr) == -0.008016697276824889
@@ -518,7 +651,8 @@ def test_pair_resolved() -> None:
     model = DispersionModel(numbers, positions)
 
     res = model.get_pairwise_dispersion(
-        DampingParam(s8=1.20065498, a1=0.40085597, a2=5.02928789)
+        DampingFunction(model="d4"),
+        DampingParam(model="d4", s8=1.20065498, a1=0.40085597, a2=5.02928789)
     )
 
     assert approx(res.get("additive pairwise energy"), abs=thr) == pair_disp2
@@ -627,6 +761,95 @@ def test_properties() -> None:
     assert approx(res.get("coordination numbers"), abs=thr) == cn
     assert approx(res.get("partial charges"), abs=thr) == charges
     assert approx(res.get("polarizabilities"), abs=thr) == alpha
+
+
+def test_hessian_pbed4() -> None:
+    """Sanity test for numerical Hessian on a reasonable water structure."""
+    thr = 1.0e-6  # numerical FD noise tolerance for symmetry
+
+    numbers = np.array([8, 1, 1], dtype=int)
+    positions = np.array(
+        [
+            [+0.00000000000000, +0.00000000000000, -0.73578586109551],
+            [+1.44183152868459, +0.00000000000000, +0.36789293054775],
+            [-1.44183152868459, +0.00000000000000, +0.36789293054775],
+        ],
+        dtype=float,
+    )
+
+    hess_ref = np.array(
+        [
+            [
+                [
+                    [ 1.43060192e-05,  0.00000000e+00, -4.92337901e-17],
+                    [-7.15300960e-06,  0.00000000e+00, -2.56424952e-05],
+                    [-7.15300960e-06,  0.00000000e+00,  2.56424952e-05],
+                ],
+                [
+                    [ 0.00000000e+00, -5.26920204e-05,  0.00000000e+00],
+                    [ 0.00000000e+00,  2.63460102e-05,  0.00000000e+00],
+                    [ 0.00000000e+00,  2.63460102e-05,  0.00000000e+00],
+                ],
+                [
+                    [ 6.77626358e-17,  0.00000000e+00,  1.63815257e-05],
+                    [-3.66802752e-05,  0.00000000e+00, -8.19076293e-06],
+                    [ 3.66802752e-05,  0.00000000e+00, -8.19076293e-06],
+                ],
+            ],
+            [
+                [
+                    [-7.15300962e-06,  0.00000000e+00, -3.66802753e-05],
+                    [ 1.86530626e-06,  0.00000000e+00,  3.11613853e-05],
+                    [ 5.28770334e-06,  0.00000000e+00,  5.51889003e-06],
+                ],
+                [
+                    [ 0.00000000e+00,  2.63460102e-05,  0.00000000e+00],
+                    [ 0.00000000e+00, -2.14985217e-05,  0.00000000e+00],
+                    [ 0.00000000e+00, -4.84748855e-06,  0.00000000e+00],
+                ],
+                [
+                    [-2.56424952e-05,  0.00000000e+00, -8.19076283e-06],
+                    [ 3.11613852e-05,  0.00000000e+00,  5.58414533e-06],
+                    [-5.51889001e-06,  0.00000000e+00,  2.60661760e-06],
+                ],
+            ],
+            [
+                [
+                    [-7.15300962e-06,  0.00000000e+00,  3.66802753e-05],
+                    [ 5.28770334e-06,  0.00000000e+00, -5.51889003e-06],
+                    [ 1.86530626e-06,  0.00000000e+00, -3.11613853e-05],
+                ],
+                [
+                    [ 0.00000000e+00,  2.63460102e-05,  0.00000000e+00],
+                    [ 0.00000000e+00, -4.84748855e-06,  0.00000000e+00],
+                    [ 0.00000000e+00, -2.14985217e-05,  0.00000000e+00],
+                ],
+                [
+                    [ 2.56424952e-05,  0.00000000e+00, -8.19076284e-06],
+                    [ 5.51889001e-06,  0.00000000e+00,  2.60661760e-06],
+                    [-3.11613852e-05,  0.00000000e+00,  5.58414533e-06],
+                ],
+            ],
+        ], 
+        dtype=float,
+    )
+
+
+    model = DispersionModel(numbers, positions, model="d4")
+    damp = DampingFunction(model="d4")
+    param = DampingParam(method="pbe", model="d4")
+
+    res = model.get_numerical_hessian(damp, param)
+    hess = res["hessian"]
+
+    assert hess.shape == (3, 3, 3, 3)
+
+    assert np.isfinite(hess).all()
+
+    # symmetric under (i,a) <-> (j,b)
+    assert approx(hess, abs=thr) == np.swapaxes(np.swapaxes(hess, 0, 2), 1, 3)
+
+    assert approx(hess, abs=thr) == hess_ref
 
 
 def test_error_model() -> None:

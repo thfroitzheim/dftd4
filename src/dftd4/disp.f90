@@ -20,10 +20,11 @@ module dftd4_disp
    use dftd4_blas, only : d4_gemv
    use dftd4_cache, only : dispersion_cache
    use dftd4_cutoff, only : realspace_cutoff, get_lattice_points
-   use dftd4_damping, only : damping_param
+   use dftd4_damping, only : damping_type
    use dftd4_data, only : get_covalent_rad
    use dftd4_model, only : dispersion_model
    use dftd4_ncoord, only : get_coordination_number, add_coordination_number_derivs
+   use dftd4_param, only : param_type
    use mctc_env, only : wp, error_type
    use mctc_io, only : structure_type
    use mctc_io_convert, only : autoaa
@@ -38,17 +39,20 @@ contains
 
 
 !> Wrapper to handle the evaluation of dispersion energy and derivatives
-subroutine get_dispersion(mol, disp, param, cutoff, energy, gradient, sigma)
+subroutine get_dispersion(mol, disp, damp, param, cutoff, energy, gradient, sigma)
    !DEC$ ATTRIBUTES DLLEXPORT :: get_dispersion
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    !> Dispersion model
    class(dispersion_model), intent(in) :: disp
 
+   !> Damping function
+   type(damping_type), intent(in) :: damp
+
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
 
    !> Realspace cutoffs
    type(realspace_cutoff), intent(in) :: cutoff
@@ -72,7 +76,7 @@ subroutine get_dispersion(mol, disp, param, cutoff, energy, gradient, sigma)
    type(error_type), allocatable :: error
 
    mref = maxval(disp%ref)
-   grad = present(gradient).or.present(sigma)
+   grad = present(gradient).and.present(sigma)
 
    if (.not. allocated(disp%mchrg)) then
       write(error_unit, '("[Error]:", 1x, a)') "Not supported for self-consistent DFT-D"
@@ -104,7 +108,7 @@ subroutine get_dispersion(mol, disp, param, cutoff, energy, gradient, sigma)
    end if
 
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp2, lattr)
-   call disp%get_dispersion2(mol, cache, param, lattr, cutoff%disp2, &
+   call disp%get_dispersion2(mol, cache, damp, param, lattr, cutoff%disp2, &
       & energies, dEdcn, dEdq, gradient, sigma)
    
    if (.not.disp%charge_dep_3b) then
@@ -118,7 +122,7 @@ subroutine get_dispersion(mol, disp, param, cutoff, energy, gradient, sigma)
    call disp%update(mol, cache, cn, q, grad=grad)
 
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp3, lattr)
-   call disp%get_dispersion3(mol, cache, param, lattr, cutoff%disp3, &
+   call disp%get_dispersion3(mol, cache, damp, param, lattr, cutoff%disp3, &
       & energies, dEdcn, dEdq, gradient, sigma)
    if (grad) then
       call add_coordination_number_derivs(mol, lattr, cutoff%cn, &
@@ -142,7 +146,7 @@ subroutine get_properties(mol, disp, cutoff, cn, q, c6, alpha, alphaqq)
    !DEC$ ATTRIBUTES DLLEXPORT :: get_properties
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    !> Dispersion model
    class(dispersion_model), intent(in) :: disp
@@ -195,17 +199,20 @@ end subroutine get_properties
 
 
 !> Wrapper to handle the evaluation of pairwise representation of the dispersion energy
-subroutine get_pairwise_dispersion(mol, disp, param, cutoff, energy2, energy3)
+subroutine get_pairwise_dispersion(mol, disp, damp, param, cutoff, energy2, energy3)
    !DEC$ ATTRIBUTES DLLEXPORT :: get_pairwise_dispersion
 
    !> Molecular structure data
-   class(structure_type), intent(in) :: mol
+   type(structure_type), intent(in) :: mol
 
    !> Dispersion model
    class(dispersion_model), intent(in) :: disp
 
+   !> Damping function
+   type(damping_type), intent(in) :: damp
+
    !> Damping parameters
-   class(damping_param), intent(in) :: param
+   type(param_type), intent(in) :: param
 
    !> Realspace cutoffs
    type(realspace_cutoff), intent(in) :: cutoff
@@ -244,15 +251,15 @@ subroutine get_pairwise_dispersion(mol, disp, param, cutoff, energy2, energy3)
    energy2(:, :) = 0.0_wp
    energy3(:, :) = 0.0_wp
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp2, lattr)
-   call disp%get_pairwise_dispersion2(mol, cache, param, lattr, cutoff%disp2, &
-      & energy2)
+   call disp%get_pairwise_dispersion2(mol, cache, damp%damping_2b, param, &
+      & lattr, cutoff%disp2, energy2)
 
    q(:) = 0.0_wp
    call disp%update(mol, cache, cn, q, grad=.false.)
 
    call get_lattice_points(mol%periodic, mol%lattice, cutoff%disp3, lattr)
-   call disp%get_pairwise_dispersion3(mol, cache, param, lattr, cutoff%disp3, &
-      & energy3)
+   call disp%get_pairwise_dispersion3(mol, cache, damp%damping_3b, param, &
+      & lattr, cutoff%disp3, energy3)
 
 end subroutine get_pairwise_dispersion
 

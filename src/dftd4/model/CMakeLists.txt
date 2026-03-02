@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with dftd4.  If not, see <https://www.gnu.org/licenses/>.
 
+add_subdirectory("reference")
+
 set(dir "${CMAKE_CURRENT_SOURCE_DIR}")
 
 list(
