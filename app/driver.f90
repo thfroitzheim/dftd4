@@ -318,16 +318,18 @@ subroutine run_param(config, error)
          type(functional_group), allocatable :: funcs(:)
          character(len=:), allocatable :: temp_names(:)
          integer, parameter :: MAX_LEN = 20
-    
+
          integer :: i, j, nfuncs
          integer :: size_j, size_jp1
- 
+
          call get_functionals(funcs)
          nfuncs = size(funcs)
 
-         ! Bubble sort based on the first name in each group of funcs
+         ! Bubble sort based on the first name, skipping unallocated entries
          do i = 1, nfuncs - 1
             do j = 1, nfuncs - i
+               if (.not.allocated(funcs(j)%names)) cycle
+               if (.not.allocated(funcs(j+1)%names)) cycle
                if (funcs(j)%names(1) > funcs(j+1)%names(1)) then
                   size_j = size(funcs(j)%names)
                   size_jp1 = size(funcs(j+1)%names)
@@ -348,10 +350,11 @@ subroutine run_param(config, error)
                end if
             end do
          end do
-         
+
          write(output_unit, '(a)') "List of available functionals:"
-         
+
          do i = 1, nfuncs
+            if (.not.allocated(funcs(i)%names)) cycle
             associate(names => funcs(i)%names)
                do j = 1, size(names)
                   if (len_trim(names(j)) > 0) then
